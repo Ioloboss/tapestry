@@ -50,6 +50,8 @@ pub enum TableTag {
 	IndexToLocation,
 	FontHeader,
 	CharacterToGlyphIndex,
+	HorizontalHeaderTable,
+	HorizontalMetricsTable,
 }
 
 impl Display for TableTag {
@@ -61,6 +63,8 @@ impl Display for TableTag {
 			TableTag::IndexToLocation => write!(f, "loca: Index To Location Table"),
 			TableTag::FontHeader => write!(f, "head: Font Header Table"),
 			TableTag::CharacterToGlyphIndex => write!(f, "cmap: Character To Glyph Index Table"),
+			TableTag::HorizontalHeaderTable => write!(f, "hhea: Horizontal Header Table"),
+			TableTag::HorizontalMetricsTable => write!(f, "hmtx: Horizontal Metrics Table"),
 		}
 	}
 }
@@ -258,6 +262,31 @@ pub struct CharacterToGlyphIndexTable {
 	pub subtables: Vec<CharacterToGlyphIndexSubtable>,
 }
 
+pub struct HorizontalHeaderTable {
+	major_version: u16,
+	minor_version: u16,
+	ascender: i16,
+	descender: i16,
+	line_gap: i16,
+	advance_width_max: u16,
+	minimum_left_side_bearing: i16,
+	minimum_right_side_bearing: i16,
+	x_max_extent: i16,
+	caret_slope_rise: i16,
+	caret_slope_run: i16,
+	caret_offset: i16,
+	pub number_of_horizontal_metrics: u16,
+}
+
+pub struct HorizontalMetric {
+	pub advance_width: u16,
+	pub left_side_bearing: i16,
+}
+
+pub struct HorizontalMetricsTable {
+	pub horizontal_metrics: Vec<HorizontalMetric>,
+}
+
 pub trait FromBytes {
 	type Bytes: Default + AsMut<[u8]>;
 
@@ -322,6 +351,8 @@ impl FromBytes for TableTag {
 			[b'l', b'o', b'c', b'a'] => TableTag::IndexToLocation,
 			[b'h', b'e', b'a', b'd'] => TableTag::FontHeader,
 			[b'c', b'm', b'a', b'p'] => TableTag::CharacterToGlyphIndex,
+			[b'h', b'h', b'e', b'a'] => TableTag::HorizontalHeaderTable,
+			[b'h', b'm', b't', b'x'] => TableTag::HorizontalMetricsTable,
 			_ => TableTag::Other([bytes[0] as char, bytes[1] as char, bytes[2] as char, bytes[3] as char]),
 		}
 	}
@@ -440,6 +471,57 @@ impl FromTTFReader for FontHeaderTable {
 			font_direction_hint: ttf_reader.read_bytes()?,
 			index_to_location_format: ttf_reader.read_bytes()?,
 			glyph_data_format: ttf_reader.read_bytes()?,
+		})
+	}
+}
+
+impl FromTTFReader for HorizontalHeaderTable {
+	type Input = u32;
+
+	fn read(ttf_reader: &mut TrueTypeFontReader, offset: u32) -> Result<HorizontalHeaderTable, TrueTypeFontReaderError> {
+		ttf_reader.buffer_reader.seek(io::SeekFrom::Start(offset as u64))?;
+		let major_version = ttf_reader.read_bytes()?;
+		let minor_version = ttf_reader.read_bytes()?;
+
+		if major_version != 1 || minor_version != 0 {
+			todo!("Version {major_version}.{minor_version} for hhea table is not currently supported");
+		}
+
+		let ascender = ttf_reader.read_bytes()?;
+		let descender = ttf_reader.read_bytes()?;
+		let line_gap = ttf_reader.read_bytes()?;
+		let advance_width_max = ttf_reader.read_bytes()?;
+		let minimum_left_side_bearing = ttf_reader.read_bytes()?;
+		let minimum_right_side_bearing = ttf_reader.read_bytes()?;
+		let x_max_extent = ttf_reader.read_bytes()?;
+		let caret_slope_rise = ttf_reader.read_bytes()?;
+		let caret_slope_run = ttf_reader.read_bytes()?;
+		let caret_offset = ttf_reader.read_bytes()?;
+		let reserved: i16 = ttf_reader.read_bytes()?;
+		let reserved: i16 = ttf_reader.read_bytes()?;
+		let reserved: i16 = ttf_reader.read_bytes()?;
+		let reserved: i16 = ttf_reader.read_bytes()?;
+		let metric_data_format: i16 = ttf_reader.read_bytes()?;
+		if metric_data_format != 0 {
+			todo!("Metric Data Format {metric_data_format} from hhea is not currently supported");
+		}
+		let number_of_horizontal_metrics = ttf_reader.read_bytes()?;
+
+
+		Ok(HorizontalHeaderTable {
+			major_version,
+			minor_version,
+			ascender,
+			descender,
+			line_gap,
+			advance_width_max,
+			minimum_left_side_bearing,
+			minimum_right_side_bearing,
+			x_max_extent,
+			caret_slope_rise,
+			caret_slope_run,
+			caret_offset,
+			number_of_horizontal_metrics,
 		})
 	}
 }
@@ -884,6 +966,32 @@ impl FromTTFReader for CharacterToGlyphIndexTable {
 			number_of_subtables,
 			encoding_records,
 			subtables,
+		})
+	}
+}
+
+impl FromTTFReader for HorizontalMetricsTable {
+	type Input = (u16, u16, u64);
+
+	fn read(ttf_reader: &mut TrueTypeFontReader, (number_of_horizontal_metrics, number_of_glyphs, offset): (u16, u16, u64)) -> Result<HorizontalMetricsTable, TrueTypeFontReaderError> {
+		ttf_reader.buffer_reader.seek(io::SeekFrom::Start(offset))?;
+
+		let mut horizontal_metrics = Vec::with_capacity(number_of_glyphs as usize);
+		let mut most_recent_advance_width = 0;
+		for _ in 0..number_of_horizontal_metrics {
+			let advance_width = ttf_reader.read_bytes()?;
+			let left_side_bearing = ttf_reader.read_bytes()?;
+			most_recent_advance_width = advance_width;
+			horizontal_metrics.push(HorizontalMetric { advance_width, left_side_bearing });
+		}
+
+		for _ in 0..(number_of_glyphs - number_of_horizontal_metrics) {
+			let left_side_bearing = ttf_reader.read_bytes()?;
+			horizontal_metrics.push(HorizontalMetric { advance_width: most_recent_advance_width, left_side_bearing });
+		}
+
+		Ok(HorizontalMetricsTable {
+			horizontal_metrics,
 		})
 	}
 }

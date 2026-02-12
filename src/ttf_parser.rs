@@ -1,4 +1,4 @@
-use crate::{font::{self, Bounds, GlyphParseError, Position, ToTriangles, Vertex}, ttf_reader::{ComponentGlyphRaw, CompositeGlyphRaw, GlyphDataRaw, GlyphRaw, SimpleGlyphRaw}};
+use crate::{font::{self, Bounds, FontUnits, GlyphParseError, Position, ToTriangles, Vertex}, ttf_reader::{ComponentGlyphRaw, CompositeGlyphRaw, GlyphDataRaw, GlyphRaw, SimpleGlyphRaw}};
 
 impl From<GlyphIntermediate> for font::Glyph {
 	fn from(value: GlyphIntermediate) -> Self {
@@ -34,9 +34,9 @@ impl From<GlyphComponentIntermediate> for font::ComponentGlyph {
 	}
 }
 
-impl From<Offset> for Position<i32> {
+impl From<Offset> for Position<FontUnits<i32>> {
 	fn from(value: Offset) -> Self {
-		Self { x: value.x, y: value.y }
+		Self { x: value.x.into(), y: value.y.into() }
 	}
 }
 
@@ -57,15 +57,15 @@ impl Contour {
 			let y_1: i64;
 			let y_2: i64;
 			if (first_vertex.y < second_vertex.y) {
-				x_1 = (first_vertex.x - second_vertex.x) as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
-				y_1 = (first_vertex.y - second_vertex.y) as i64;
-				x_2 = (vertex.x - second_vertex.x) as i64;
-				y_2 = (vertex.y - second_vertex.y) as i64;
+				x_1 = (first_vertex.x - second_vertex.x).value as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
+				y_1 = (first_vertex.y - second_vertex.y).value as i64;
+				x_2 = (vertex.x - second_vertex.x).value as i64;
+				y_2 = (vertex.y - second_vertex.y).value as i64;
 			} else {
-				x_1 = (second_vertex.x - first_vertex.x) as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
-				y_1 = (second_vertex.y - first_vertex.y) as i64;
-				x_2 = (vertex.x - first_vertex.x) as i64;
-				y_2 = (vertex.y - first_vertex.y) as i64;
+				x_1 = (second_vertex.x - first_vertex.x).value as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
+				y_1 = (second_vertex.y - first_vertex.y).value as i64;
+				x_2 = (vertex.x - first_vertex.x).value as i64;
+				y_2 = (vertex.y - first_vertex.y).value as i64;
 			}
 
 			let vertex_east = ( (x_1 * y_2) < (y_1 * x_2) );
@@ -118,21 +118,21 @@ impl IntersectionPoint<Vertex> for (&Vertex, &Vertex) {
 		let vertex_3 = other_line.0;
 		let vertex_4 = other_line.1;
 
-		let m_1 = (vertex_1.y as f64 - vertex_2.y as f64) / (vertex_1.x as f64 - vertex_2.x as f64);
-		let m_2 = (vertex_3.y as f64 - vertex_4.y as f64) / (vertex_3.x as f64 - vertex_4.x as f64);
+		let m_1 = (vertex_1.y.value as f64 - vertex_2.y.value as f64) / (vertex_1.x.value as f64 - vertex_2.x.value as f64);
+		let m_2 = (vertex_3.y.value as f64 - vertex_4.y.value as f64) / (vertex_3.x.value as f64 - vertex_4.x.value as f64);
 
 		let (x, y) = if vertex_1.x == vertex_2.x {
-			let x = vertex_1.x as f64;
-			let y = m_2 * (x - vertex_3.x as f64) + vertex_3.y as f64;
+			let x = vertex_1.x.value as f64;
+			let y = m_2 * (x - vertex_3.x.value as f64) + vertex_3.y.value as f64;
 			(x, y)
 		} else if vertex_3.x == vertex_4.x {
-			let x = vertex_3.x as f64;
-			let y = m_1 * (x - vertex_1.x as f64) + vertex_1.y as f64;
+			let x = vertex_3.x.value as f64;
+			let y = m_1 * (x - vertex_1.x.value as f64) + vertex_1.y.value as f64;
 			(x, y)
 
 		} else {
-			let x = ( (m_1 * vertex_1.x as f64) - (m_2 * vertex_3.x as f64) + vertex_3.y as f64 - vertex_1.y as f64 ) / (m_1 - m_2);
-			let y = m_1 * (x - vertex_1.x as f64) + vertex_1.y as f64;
+			let x = ( (m_1 * vertex_1.x.value as f64) - (m_2 * vertex_3.x.value as f64) + vertex_3.y.value as f64 - vertex_1.y.value as f64 ) / (m_1 - m_2);
+			let y = m_1 * (x - vertex_1.x.value as f64) + vertex_1.y.value as f64;
 			(x, y)
 
 		};
@@ -140,7 +140,7 @@ impl IntersectionPoint<Vertex> for (&Vertex, &Vertex) {
 		let x = x.round() as i16;
 		let y = y.round() as i16;
 
-		Vertex { x, y, on_curve: true, uv_coords: [0.0, 0.0], }
+		Vertex { x: x.into(), y: y.into(), on_curve: true, uv_coords: [0.0, 0.0], }
 	}
 }
 
@@ -153,11 +153,11 @@ impl ToRightOf<Vertex> for (&Vertex, &Vertex) {
 		let vertex_1 = self.0;
 		let vertex_2 = self.1;
 
-		let x_1 = (vertex_2.x - vertex_1.x) as i64;
-		let y_1 = (vertex_2.y - vertex_1.y) as i64;
+		let x_1 = (vertex_2.x - vertex_1.x).value as i64;
+		let y_1 = (vertex_2.y - vertex_1.y).value as i64;
 
-		let x_2 = (vertex_2.x - vertex.x) as i64;
-		let y_2 = (vertex_2.y - vertex.y) as i64;
+		let x_2 = (vertex_2.x - vertex.x).value as i64;
+		let y_2 = (vertex_2.y - vertex.y).value as i64;
 
 		if or_equal_to {
 			( x_1 * y_2 ) >= ( y_1 * x_2 )
@@ -176,22 +176,22 @@ impl Inside<Vertex> for (&Vertex, &Vertex, &Vertex) {
 		let vertex_1 = self.0;
 		let vertex_2 = self.1;
 		let vertex_3 = self.2;
-		let x_1 = (vertex_1.x - vertex_2.x) as i64;
-		let y_1 = (vertex_1.y - vertex_2.y) as i64;
-		let x_2 = (vertex.x - vertex_2.x) as i64;
-		let y_2 = (vertex.y - vertex_2.y) as i64;
+		let x_1 = (vertex_1.x - vertex_2.x).value as i64;
+		let y_1 = (vertex_1.y - vertex_2.y).value as i64;
+		let x_2 = (vertex.x - vertex_2.x).value as i64;
+		let y_2 = (vertex.y - vertex_2.y).value as i64;
 		let orientation_1 = ( (x_1 * y_2) >= (y_1 * x_2) );
 
-		let x_1 = (vertex_2.x - vertex_3.x) as i64;
-		let y_1 = (vertex_2.y - vertex_3.y) as i64;
-		let x_2 = (vertex.x - vertex_3.x) as i64;
-		let y_2 = (vertex.y - vertex_3.y) as i64;
+		let x_1 = (vertex_2.x - vertex_3.x).value as i64;
+		let y_1 = (vertex_2.y - vertex_3.y).value as i64;
+		let x_2 = (vertex.x - vertex_3.x).value as i64;
+		let y_2 = (vertex.y - vertex_3.y).value as i64;
 		let orientation_2 = ( (x_1 * y_2) >= (y_1 * x_2) );
 
-		let x_1 = (vertex_3.x - vertex_1.x) as i64;
-		let y_1 = (vertex_3.y - vertex_1.y) as i64;
-		let x_2 = (vertex.x - vertex_1.x) as i64;
-		let y_2 = (vertex.y - vertex_1.y) as i64;
+		let x_1 = (vertex_3.x - vertex_1.x).value as i64;
+		let y_1 = (vertex_3.y - vertex_1.y).value as i64;
+		let x_2 = (vertex.x - vertex_1.x).value as i64;
+		let y_2 = (vertex.y - vertex_1.y).value as i64;
 		let orientation_3 = ( (x_1 * y_2) >= (y_1 * x_2) );
 
 		(orientation_1 == orientation_2) && (orientation_2 == orientation_3)
@@ -459,7 +459,7 @@ impl ToTriangles for GlyhpSimpleIntermediate {
 						let vertex = &vertices[index];
 						let previous_vertex = &vertices[previous_index];
 						if ( !vertex.on_curve && !previous_vertex.on_curve ) {
-							let extra_vertex = Vertex::new((vertex.x + previous_vertex.x) / 2, (vertex.y + previous_vertex.y) / 2);
+							let extra_vertex = Vertex::new((vertex.x + previous_vertex.x).value / 2, (vertex.y + previous_vertex.y).value / 2);
 							let extra_vertex_index = vertices.len();
 							vertices.push(extra_vertex);
 							if debug_mode {
@@ -523,12 +523,12 @@ impl ToTriangles for GlyhpSimpleIntermediate {
 
 							let new_index = vertices.len();
 							if intersects {
-								let new_vertex_x = vertex.x as f64 + 0.25*(previous_vertex.x as f64 - vertex.x as f64) + 0.25*(next_vertex.x as f64 - vertex.x as f64);
-								let new_vertex_y = vertex.y as f64 + 0.25*(previous_vertex.y as f64 - vertex.y as f64) + 0.25*(next_vertex.y as f64 - vertex.y as f64);
+								let new_vertex_x = vertex.x.value as f64 + 0.25*(previous_vertex.x.value as f64 - vertex.x.value as f64) + 0.25*(next_vertex.x.value as f64 - vertex.x.value as f64);
+								let new_vertex_y = vertex.y.value as f64 + 0.25*(previous_vertex.y.value as f64 - vertex.y.value as f64) + 0.25*(next_vertex.y.value as f64 - vertex.y.value as f64);
 								let new_vertex_x = new_vertex_x.round() as i16;
 								let new_vertex_y = new_vertex_y.round() as i16;
 
-								let new_vertex = Vertex { x: new_vertex_x, y: new_vertex_y, on_curve: true, uv_coords: [0.0, 0.0]};
+								let new_vertex = Vertex { x: new_vertex_x.into(), y: new_vertex_y.into(), on_curve: true, uv_coords: [0.0, 0.0]};
 								vertices.push(new_vertex);
 								if debug_mode {
 									println!("Vertex {new_index} added so that contour fits line better");
@@ -757,7 +757,7 @@ impl ToTriangles for GlyhpSimpleIntermediate {
 						let parent_index_current = parent_index_current.unwrap();
 						let child_vertex = &vertices[child_index_current];
 						let parent_vertex = &vertices[parent_index_current];
-						let distance_squared_current = (child_vertex.x as i64 - parent_vertex.x as i64).pow(2) + (child_vertex.y as i64 - parent_vertex.y as i64).pow(2);
+						let distance_squared_current = (child_vertex.x.value as i64 - parent_vertex.x.value as i64).pow(2) + (child_vertex.y.value as i64 - parent_vertex.y.value as i64).pow(2);
 						if (distance_squared_current < distance_squared) && child_vertex.on_curve && parent_vertex.on_curve && !channeled[parent_index_current] {
 							//let first_vertex_index = contour_indices.previous(child_index_current).unwrap();
 							let first_vertex_index = child_index_current; // IF THIS POINT IS OFF CURVE && CONVEX SHOULD BE PREVIOUS POINT ????????
@@ -903,10 +903,10 @@ impl ToTriangles for GlyhpSimpleIntermediate {
 				let previous_point = &vertices[previous_index];
 				let next_point = &vertices[next_index];
 
-				let x_1 = (previous_point.x - centre_point.x) as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
-				let y_1 = (previous_point.y - centre_point.y) as i64;
-				let x_2 = (next_point.x - centre_point.x) as i64;
-				let y_2 = (next_point.y - centre_point.y) as i64;
+				let x_1 = (previous_point.x - centre_point.x).value as i64; // SO THAT MULTIPLACTION DOESN'T OVERFLOW
+				let y_1 = (previous_point.y - centre_point.y).value as i64;
+				let x_2 = (next_point.x - centre_point.x).value as i64;
+				let y_2 = (next_point.y - centre_point.y).value as i64;
 
 				let direction = ( (x_1 * y_2) >= (y_1 * x_2) ).into(); // CHANGED TO GE
 
@@ -1035,7 +1035,7 @@ impl RemovableVector<usize> for Vec<Option<usize>> {
 impl From<&Point> for Vertex {
 	fn from(value: &Point) -> Self {
 		let on_curve = (value.flag & 0x01) == 1;
-		Vertex{ x: value.x, y: value.y, on_curve, uv_coords: [0.0, 0.0], }
+		Vertex{ x: value.x.into(), y: value.y.into(), on_curve, uv_coords: [0.0, 0.0], }
 	}
 }
 
@@ -1283,8 +1283,8 @@ pub trait GetDirection<T> {
 
 impl GetDirection<Vertex> for Vec<Option<usize>> {
 	fn get_direction(&self, vertices: &Vec<Vertex>) -> Direction {
-		let mut lowest_y = i16::MAX;
-		let mut highest_x = i16::MIN;
+		let mut lowest_y: FontUnits<i16> = i16::MAX.into();
+		let mut highest_x: FontUnits<i16> = i16::MIN.into();
 		let mut chosen_indices_position: usize = 0;
 		for (indices_position, index) in self.iter().enumerate() {
 			match index {

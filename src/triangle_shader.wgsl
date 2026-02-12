@@ -15,10 +15,9 @@ struct VertexOutput {
 @vertex
 fn vs_main(
 	model: VertexInput,
-	instance_input: InstanceInput,
 ) -> VertexOutput {
 	var out: VertexOutput;
-	let position = model.position + (instance_input.position / vec2<f32>(40, 20));
+	let position = model.position;
 	out.clip_position = vec4<f32>(position, 0.0, 1.0);
 	out.uv_coordinates = model.uv_coordinates;
 	return out;

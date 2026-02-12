@@ -3,7 +3,7 @@ pub mod ttf_parser;
 pub mod font;
 pub mod read {
 	use crate::font::{self, Font, ToTriangles};
-	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, IndexToLocationTable, MaximumProfileTable, TableRecord, TableTag};
+	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, TableRecord, TableTag};
 	use crate::ttf_parser::{Direction, GlyphDataIntermediate, GlyphIntermediate};
 	use std::{fs::File, path::Path};
 
@@ -21,6 +21,8 @@ pub mod read {
 		let mut index_to_location_table_record: Option<TableRecord> = None;
 		let mut font_header_table_record: Option<TableRecord> = None;
 		let mut character_to_glyph_index_table_record: Option<TableRecord> = None;
+		let mut horizontal_header_table: Option<TableRecord> = None;
+		let mut horizontal_metrics_table: Option<TableRecord> = None;
 		let mut other_table_records = Vec::<TableRecord>::new();
 
 		for _ in 0..number_of_tables {
@@ -31,6 +33,8 @@ pub mod read {
 				TableTag::IndexToLocation => index_to_location_table_record = Some(table_record),
 				TableTag::FontHeader => font_header_table_record = Some(table_record),
 				TableTag::CharacterToGlyphIndex => character_to_glyph_index_table_record = Some(table_record),
+				TableTag::HorizontalHeaderTable => horizontal_header_table = Some(table_record),
+				TableTag::HorizontalMetricsTable => horizontal_metrics_table = Some(table_record),
 				TableTag::Other(_) =>other_table_records.push(table_record),
 			};
 		}
@@ -91,6 +95,8 @@ pub mod read {
 			let mut index_to_location_table_record: Option<TableRecord> = None;
 			let mut font_header_table_record: Option<TableRecord> = None;
 			let mut character_to_glyph_index_table_record: Option<TableRecord> = None;
+			let mut horizontal_header_table_record: Option<TableRecord> = None;
+			let mut horizontal_metrics_table_record: Option<TableRecord> = None;
 			let mut other_table_records = Vec::<TableRecord>::new();
 
 			for _ in 0..number_of_tables {
@@ -101,6 +107,8 @@ pub mod read {
 					TableTag::IndexToLocation => index_to_location_table_record = Some(table_record),
 					TableTag::FontHeader => font_header_table_record = Some(table_record),
 					TableTag::CharacterToGlyphIndex => character_to_glyph_index_table_record = Some(table_record),
+					TableTag::HorizontalHeaderTable => horizontal_header_table_record = Some(table_record),
+					TableTag::HorizontalMetricsTable => horizontal_metrics_table_record = Some(table_record),
 					TableTag::Other(_) =>other_table_records.push(table_record),
 				};
 			}
@@ -120,6 +128,16 @@ pub mod read {
 				None => panic!("Font should have a loca table."),
 			};
 
+			let horizontal_header_table: HorizontalHeaderTable = match horizontal_header_table_record {
+				Some(horizontal_header_table_record) => ttf_reader.read(horizontal_header_table_record.offset).unwrap(),
+				None => panic!("Font should have a hhea table."),
+			};
+
+			let horizontal_metrics_table: HorizontalMetricsTable = match horizontal_metrics_table_record {
+				Some(horizontal_metrics_table_record) => ttf_reader.read((horizontal_header_table.number_of_horizontal_metrics, maximum_profile_table.num_glyphs, horizontal_metrics_table_record.offset as u64)).unwrap(),
+				None => panic!("Font should have a hmtx table."),
+			};
+
 			let glyph_table: GlyphTable = match glyph_table_record {
 				Some(glyph_table_record) => ttf_reader.read((index_to_location_table.glyph_offsets, glyph_table_record.offset as u64)).unwrap(),
 				None => panic!("Font should have a glyf table."),
@@ -127,13 +145,18 @@ pub mod read {
 
 			let glyphs: Vec<GlyphIntermediate> = glyph_table.glyphs.into_iter().map(|v| v.into()).collect();
 
+
 			let character_to_glyph_index_table: CharacterToGlyphIndexTable = match character_to_glyph_index_table_record {
 				Some(charachter_to_glyph_index_table_record) => ttf_reader.read(charachter_to_glyph_index_table_record.offset).unwrap(),
 				None => panic!("Font should have a cmap table."),
 			};
 
 			let mappings: Vec<font::Mapping> = character_to_glyph_index_table.subtables.into_iter().map(|v| v.into()).collect();
-			let glyphs: Vec<font::Glyph> = glyphs.into_iter().map(|v| v.into()).collect();
+			let mut glyphs: Vec<font::Glyph> = glyphs.into_iter().map(|v| v.into()).collect();
+
+			for (glyph, horizontal_metric) in glyphs.iter_mut().zip(horizontal_metrics_table.horizontal_metrics) {
+				glyph.set_horizontal_metrics(horizontal_metric);
+			}
 
 			Font {
 				glyphs,
