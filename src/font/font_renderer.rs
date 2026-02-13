@@ -502,6 +502,137 @@ impl FontRenderer {
 	pub fn add_text_box(&mut self, text_box: TextBox) {
 		self.text_boxes.push(text_box);
 	}
+
+	pub fn draw_text(&self, queue: &wgpu::Queue, view: &wgpu::TextureView) {
+
+		let size = self.window.inner_size();
+
+		let multisample_texture = self.device.create_texture(&wgpu::TextureDescriptor{
+			label: Some("Multisample texture"),
+			size: wgpu::Extent3d{ width: size.width, height: size.height, depth_or_array_layers: 1},
+			sample_count: 4,
+			dimension: wgpu::TextureDimension::D2,
+			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+			mip_level_count: 1,
+			format: wgpu::TextureFormat::Bgra8UnormSrgb,
+			view_formats: &[],
+		});
+
+		let multisample_view = multisample_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+			label: Some("Render Encoder"),
+		});
+
+		{
+			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+				label: Some("Render Pass"),
+				color_attachments: &[
+					Some(wgpu::RenderPassColorAttachment {
+						view: &multisample_view,
+						resolve_target: Some(view),
+						ops: wgpu::Operations {
+							// load: wgpu::LoadOp::Clear(
+							// 	wgpu::Color {
+							// 		r: to_linear_rgb(16) as f64,
+							// 		g: to_linear_rgb(16) as f64,
+							// 		b: to_linear_rgb(16) as f64,
+							// 		a: 1.0,
+							// 	}
+							//),
+							load: wgpu::LoadOp::Load,
+							store: wgpu::StoreOp::Store,
+						},
+						depth_slice: None, // NOT IN TUTORIAL SO MIGHT NOT WORK.
+					})
+				],
+				depth_stencil_attachment: None,
+				occlusion_query_set: None,
+				timestamp_writes: None,
+			});
+
+			render_pass.set_pipeline(&self.render_pipeline);
+			println!("Number of indices: {}", self.number_of_indices);
+			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+			let convex_bezier_indices_start = self.convex_bezier_indices_start;
+			let concave_bezier_indices_start = self.concave_bezier_indices_start;
+			let number_of_indices = self.number_of_indices;
+			if convex_bezier_indices_start - 0 > 0 {
+				let mode: u32 = 0;
+				let mode_buffer = self.device.create_buffer_init(
+					&wgpu::util::BufferInitDescriptor {
+						label: Some("Mode Buffer"),
+						contents: bytemuck::cast_slice(&[mode]),
+						usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+					}
+				);
+				let mode_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+					layout: &self.mode_bind_group_layout,
+					entries: &[
+						wgpu::BindGroupEntry {
+							binding: 0,
+							resource: mode_buffer.as_entire_binding(),
+						}
+						],
+						label: Some("mode_bind_group"),
+					}
+				);
+				render_pass.set_bind_group(0, &mode_bind_group, &[]);
+				render_pass.draw_indexed(0..convex_bezier_indices_start as _, 0, 0..1 as _);
+			}
+
+			if concave_bezier_indices_start - convex_bezier_indices_start > 0 {
+				let mode: u32 = 1;
+				let mode_buffer = self.device.create_buffer_init(
+					&wgpu::util::BufferInitDescriptor {
+						label: Some("Camera Buffer"),
+						contents: bytemuck::cast_slice(&[mode]),
+						usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+					}
+				);
+				let mode_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+					layout: &self.mode_bind_group_layout,
+					entries: &[
+						wgpu::BindGroupEntry {
+							binding: 0,
+							resource: mode_buffer.as_entire_binding(),
+						}
+						],
+						label: Some("mode_bind_group"),
+					}
+				);
+				render_pass.set_bind_group(0, &mode_bind_group, &[]);
+				render_pass.draw_indexed(convex_bezier_indices_start as _..concave_bezier_indices_start as _, 0, 0..1 as _);
+			}
+
+			if number_of_indices - concave_bezier_indices_start > 0 {
+				let mode: u32 = 2;
+				let mode_buffer = self.device.create_buffer_init(
+					&wgpu::util::BufferInitDescriptor {
+						label: Some("Camera Buffer"),
+						contents: bytemuck::cast_slice(&[mode]),
+						usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+					}
+				);
+				let mode_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+					layout: &self.mode_bind_group_layout,
+					entries: &[
+						wgpu::BindGroupEntry {
+							binding: 0,
+							resource: mode_buffer.as_entire_binding(),
+						}
+						],
+						label: Some("mode_bind_group"),
+					}
+				);
+				render_pass.set_bind_group(0, &mode_bind_group, &[]);
+				render_pass.draw_indexed(concave_bezier_indices_start as _..number_of_indices as _, 0, 0..1 as _);
+			}
+		}
+
+		queue.submit(std::iter::once(encoder.finish()));
+	}
 }
 
 pub struct TextBox {
