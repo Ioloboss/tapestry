@@ -510,7 +510,7 @@ impl FontRenderer {
 			..Default::default()
 		});
 
-		println!("{view:?}");
+		println!("Tapestry TextureView: {view:?}");
 
 		let size = self.window.inner_size();
 
