@@ -510,6 +510,8 @@ impl FontRenderer {
 			..Default::default()
 		});
 
+		println!("{view:?}");
+
 		let size = self.window.inner_size();
 
 		let multisample_texture = self.device.create_texture(&wgpu::TextureDescriptor{
