@@ -503,7 +503,12 @@ impl FontRenderer {
 		self.text_boxes.push(text_box);
 	}
 
-	pub fn draw_text(&self, queue: &wgpu::Queue, view: &wgpu::TextureView) {
+	pub fn draw_text(&self, queue: &wgpu::Queue, output: &wgpu::SurfaceTexture) {
+
+		let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+			label: Some("Tapestry TextureView"),
+			..Default::default()
+		});
 
 		let size = self.window.inner_size();
 
@@ -530,7 +535,7 @@ impl FontRenderer {
 				color_attachments: &[
 					Some(wgpu::RenderPassColorAttachment {
 						view: &multisample_view,
-						resolve_target: Some(view),
+						resolve_target: Some(&view),
 						ops: wgpu::Operations {
 							// load: wgpu::LoadOp::Clear(
 							// 	wgpu::Color {
