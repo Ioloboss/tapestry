@@ -389,14 +389,15 @@ impl FontRenderer {
 						view: &multisample_view,
 						resolve_target: Some(&view),
 						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Clear(
-								wgpu::Color {
-									r: to_linear_rgb(16) as f64,
-									g: to_linear_rgb(16) as f64,
-									b: to_linear_rgb(16) as f64,
-									a: 1.0,
-								}
-							),
+							// load: wgpu::LoadOp::Clear(
+							// 	wgpu::Color {
+							// 		r: to_linear_rgb(16) as f64,
+							// 		g: to_linear_rgb(16) as f64,
+							// 		b: to_linear_rgb(16) as f64,
+							// 		a: 1.0,
+							// 	}
+							//),
+							load: wgpu::LoadOp::Load,
 							store: wgpu::StoreOp::Store,
 						},
 						depth_slice: None, // NOT IN TUTORIAL SO MIGHT NOT WORK.
