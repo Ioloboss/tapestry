@@ -3,7 +3,7 @@ pub mod ttf_parser;
 pub mod font;
 pub mod read {
 	use crate::font::{self, Font, ToTriangles};
-	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, TableRecord, TableTag};
+	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};
 	use crate::ttf_parser::{Direction, GlyphDataIntermediate, GlyphIntermediate};
 	use std::{fs::File, path::Path};
 
@@ -23,6 +23,7 @@ pub mod read {
 		let mut character_to_glyph_index_table_record: Option<TableRecord> = None;
 		let mut horizontal_header_table: Option<TableRecord> = None;
 		let mut horizontal_metrics_table: Option<TableRecord> = None;
+		let mut os2_and_windows_metrics_table_record: Option<TableRecord> = None;
 		let mut other_table_records = Vec::<TableRecord>::new();
 
 		for _ in 0..number_of_tables {
@@ -35,6 +36,7 @@ pub mod read {
 				TableTag::CharacterToGlyphIndex => character_to_glyph_index_table_record = Some(table_record),
 				TableTag::HorizontalHeaderTable => horizontal_header_table = Some(table_record),
 				TableTag::HorizontalMetricsTable => horizontal_metrics_table = Some(table_record),
+				TableTag::OS2AndWindowsMetricsTable => os2_and_windows_metrics_table_record = Some(table_record),
 				TableTag::Other(_) =>other_table_records.push(table_record),
 			};
 		}
@@ -97,10 +99,12 @@ pub mod read {
 			let mut character_to_glyph_index_table_record: Option<TableRecord> = None;
 			let mut horizontal_header_table_record: Option<TableRecord> = None;
 			let mut horizontal_metrics_table_record: Option<TableRecord> = None;
+			let mut os2_and_windows_metrics_table_record: Option<TableRecord> = None;
 			let mut other_table_records = Vec::<TableRecord>::new();
 
 			for _ in 0..number_of_tables {
 				let table_record: TableRecord = ttf_reader.read_bytes().unwrap();
+				println!("Table Record: {table_record:?}");
 				match table_record.table_tag {
 					TableTag::Glyph => glyph_table_record = Some(table_record),
 					TableTag::MaximumProfile => maximum_profile_table_record = Some(table_record),
@@ -109,7 +113,8 @@ pub mod read {
 					TableTag::CharacterToGlyphIndex => character_to_glyph_index_table_record = Some(table_record),
 					TableTag::HorizontalHeaderTable => horizontal_header_table_record = Some(table_record),
 					TableTag::HorizontalMetricsTable => horizontal_metrics_table_record = Some(table_record),
-					TableTag::Other(_) =>other_table_records.push(table_record),
+					TableTag::OS2AndWindowsMetricsTable => os2_and_windows_metrics_table_record = Some(table_record),
+					TableTag::Other(_) => other_table_records.push(table_record),
 				};
 			}
 
@@ -138,6 +143,11 @@ pub mod read {
 				None => panic!("Font should have a hmtx table."),
 			};
 
+			let os2_and_windows_metrics_table: OS2AndWindowsMetricsTable = match os2_and_windows_metrics_table_record {
+				Some(os2_and_windows_metrics_table_record) => ttf_reader.read(os2_and_windows_metrics_table_record.offset).unwrap(),
+				None => panic!("Font should have a OS/2 table."),
+			};
+
 			let glyph_table: GlyphTable = match glyph_table_record {
 				Some(glyph_table_record) => ttf_reader.read((index_to_location_table.glyph_offsets, glyph_table_record.offset as u64)).unwrap(),
 				None => panic!("Font should have a glyf table."),
@@ -158,9 +168,20 @@ pub mod read {
 				glyph.set_horizontal_metrics(horizontal_metric);
 			}
 
+			println!("os/2 Descender: {:?}", os2_and_windows_metrics_table.s_typographic_descender);
+			println!("hhea descender: {:?}", horizontal_header_table.descender);
+			println!("os/2 table typo: {:?}", os2_and_windows_metrics_table);
+			println!("os/2 table windows: {:?}", os2_and_windows_metrics_table.us_windows_descend);
+
+			println!("Units Per Em: {:?}", font_header_table.units_per_em);
+
+
 			Font {
 				glyphs,
 				mappings,
+				units_per_em: font_header_table.units_per_em.into(),
+				typographic_descender: (os2_and_windows_metrics_table.us_windows_descend as i16).into(),
+				typographic_ascender: (os2_and_windows_metrics_table.us_windows_ascent as i16).into(),
 			}
 
 		}

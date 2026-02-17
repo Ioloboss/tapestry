@@ -52,6 +52,7 @@ pub enum TableTag {
 	CharacterToGlyphIndex,
 	HorizontalHeaderTable,
 	HorizontalMetricsTable,
+	OS2AndWindowsMetricsTable,
 }
 
 impl Display for TableTag {
@@ -65,6 +66,7 @@ impl Display for TableTag {
 			TableTag::CharacterToGlyphIndex => write!(f, "cmap: Character To Glyph Index Table"),
 			TableTag::HorizontalHeaderTable => write!(f, "hhea: Horizontal Header Table"),
 			TableTag::HorizontalMetricsTable => write!(f, "hmtx: Horizontal Metrics Table"),
+			TableTag::OS2AndWindowsMetricsTable => write!(f, "OS/2: OS/2 and Windows Metrics Table"),
 		}
 	}
 }
@@ -114,7 +116,7 @@ pub struct FontHeaderTable {
 	checksum_adjustment: u32,
 	magic_number: u32,
 	flags: u16,
-	units_per_em: u16,
+	pub units_per_em: u16,
 	created: i64,
 	modified: i64,
 	x_min: i16,
@@ -266,7 +268,7 @@ pub struct HorizontalHeaderTable {
 	major_version: u16,
 	minor_version: u16,
 	ascender: i16,
-	descender: i16,
+	pub descender: i16,
 	line_gap: i16,
 	advance_width_max: u16,
 	minimum_left_side_bearing: i16,
@@ -276,6 +278,48 @@ pub struct HorizontalHeaderTable {
 	caret_slope_run: i16,
 	caret_offset: i16,
 	pub number_of_horizontal_metrics: u16,
+}
+
+#[derive(Debug)]
+pub struct OS2AndWindowsMetricsTable {
+	version: u16,
+	x_average_character_width: i16,
+	us_weight_class: u16,
+	us_width_class: u16,
+	fs_type: u16,
+	y_subscript_x_size: i16,
+	y_subscript_y_size: i16,
+	y_subscript_x_offset: i16,
+	y_subscript_y_offset: i16,
+	y_superscript_x_size: i16,
+	y_superscript_y_size: i16,
+	y_superscript_x_offset: i16,
+	y_superscript_y_offset: i16,
+	y_strikeout_size: i16,
+	y_strikeout_position: i16,
+	s_family_class: i16,
+	panose: [u8; 10],
+	ul_unicode_range_1: u32,
+	ul_unicode_range_2: u32,
+	ul_unicode_range_3: u32,
+	ul_unicode_range_4: u32,
+	ach_vend_id: u32,
+	fs_selection: u16,
+	us_first_character_index: u16,
+	us_last_character_index: u16,
+	s_typographic_ascender: i16,
+	pub s_typographic_descender: i16,
+	s_typographic_line_gap: i16,
+	pub us_windows_ascent: u16,
+	pub us_windows_descend: u16,
+	ul_code_page_range_1: u32,
+	ul_code_page_range_2: u32,
+	sx_height: i16,
+	s_cap_height: i16,
+	us_default_character: u16,
+	us_break_character: u16,
+	us_max_context: u16,
+
 }
 
 pub struct HorizontalMetric {
@@ -341,6 +385,14 @@ impl FromBytes for i64 {
 	}
 }
 
+impl FromBytes for [u8; 10] {
+	type Bytes = [u8; 10];
+
+	fn from_be_bytes(bytes: Self::Bytes) -> Self {
+		bytes
+	}
+}
+
 impl FromBytes for TableTag {
 	type Bytes = [u8; 4];
 
@@ -353,6 +405,7 @@ impl FromBytes for TableTag {
 			[b'c', b'm', b'a', b'p'] => TableTag::CharacterToGlyphIndex,
 			[b'h', b'h', b'e', b'a'] => TableTag::HorizontalHeaderTable,
 			[b'h', b'm', b't', b'x'] => TableTag::HorizontalMetricsTable,
+			[b'O', b'S', b'/', b'2'] => TableTag::OS2AndWindowsMetricsTable,
 			_ => TableTag::Other([bytes[0] as char, bytes[1] as char, bytes[2] as char, bytes[3] as char]),
 		}
 	}
@@ -992,6 +1045,62 @@ impl FromTTFReader for HorizontalMetricsTable {
 
 		Ok(HorizontalMetricsTable {
 			horizontal_metrics,
+		})
+	}
+}
+
+impl FromTTFReader for OS2AndWindowsMetricsTable {
+	type Input = u32;
+
+	fn read(ttf_reader: &mut TrueTypeFontReader, offset: u32) -> Result<OS2AndWindowsMetricsTable, TrueTypeFontReaderError> {
+		ttf_reader.buffer_reader.seek(io::SeekFrom::Start(offset as u64))?;
+
+		let version: u16 = ttf_reader.read_bytes()?;
+
+		if version != 4 {
+			todo!("Version {version} for OS/2 table is not currently supported");
+		}
+
+		println!("Size of OS/2 table: {}", size_of::<OS2AndWindowsMetricsTable>());
+
+		Ok(OS2AndWindowsMetricsTable {
+			version,
+			x_average_character_width: ttf_reader.read_bytes()?,
+			us_weight_class: ttf_reader.read_bytes()?,
+			us_width_class: ttf_reader.read_bytes()?,
+			fs_type: ttf_reader.read_bytes()?,
+			y_subscript_x_size: ttf_reader.read_bytes()?,
+			y_subscript_y_size: ttf_reader.read_bytes()?,
+			y_subscript_x_offset: ttf_reader.read_bytes()?,
+			y_subscript_y_offset: ttf_reader.read_bytes()?,
+			y_superscript_x_size: ttf_reader.read_bytes()?,
+			y_superscript_y_size: ttf_reader.read_bytes()?,
+			y_superscript_x_offset: ttf_reader.read_bytes()?,
+			y_superscript_y_offset: ttf_reader.read_bytes()?,
+			y_strikeout_size: ttf_reader.read_bytes()?,
+			y_strikeout_position: ttf_reader.read_bytes()?,
+			s_family_class: ttf_reader.read_bytes()?,
+			panose: ttf_reader.read_bytes()?,
+			ul_unicode_range_1: ttf_reader.read_bytes()?,
+			ul_unicode_range_2: ttf_reader.read_bytes()?,
+			ul_unicode_range_3: ttf_reader.read_bytes()?,
+			ul_unicode_range_4: ttf_reader.read_bytes()?,
+			ach_vend_id: ttf_reader.read_bytes()?,
+			fs_selection: ttf_reader.read_bytes()?,
+			us_first_character_index: ttf_reader.read_bytes()?,
+			us_last_character_index: ttf_reader.read_bytes()?,
+			s_typographic_ascender: ttf_reader.read_bytes()?,
+			s_typographic_descender: ttf_reader.read_bytes()?,
+			s_typographic_line_gap: ttf_reader.read_bytes()?,
+			us_windows_ascent: ttf_reader.read_bytes()?,
+			us_windows_descend: ttf_reader.read_bytes()?,
+			ul_code_page_range_1: ttf_reader.read_bytes()?,
+			ul_code_page_range_2: ttf_reader.read_bytes()?,
+			sx_height: ttf_reader.read_bytes()?,
+			s_cap_height: ttf_reader.read_bytes()?,
+			us_default_character: ttf_reader.read_bytes()?,
+			us_break_character: ttf_reader.read_bytes()?,
+			us_max_context: ttf_reader.read_bytes()?,
 		})
 	}
 }

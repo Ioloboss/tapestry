@@ -110,10 +110,7 @@ impl From<wgpu::RequestDeviceError> for NewRendererStateError {
 }
 
 pub struct FontRenderer {
-	surface: wgpu::Surface<'static>,
-	device: wgpu::Device,
-	queue: wgpu::Queue,
-	config: wgpu::SurfaceConfiguration,
+	device: Arc<wgpu::Device>,
 	is_surface_configured: bool,
 	render_pipeline: wgpu::RenderPipeline,
 	vertex_buffer: wgpu::Buffer,
@@ -123,63 +120,19 @@ pub struct FontRenderer {
 	convex_bezier_indices_start: usize,
 	concave_bezier_indices_start: usize,
 	mode_bind_group_layout: wgpu::BindGroupLayout,
-	text_boxes: Vec<TextBox>,
+	pub text_boxes: Vec<TextBox>,
 }
 
 impl FontRenderer {
-	pub async fn new(window: Arc<Window>) -> Result<Self, NewRendererStateError> {
-		println!("New State");
+	pub async fn new(window: Arc<Window>, device: Arc<wgpu::Device>, config: &wgpu::SurfaceConfiguration) -> Result<Self, NewRendererStateError> {
+		println!("New FontRenderer");
 		let size = window.inner_size();
 
 		let convex_bezier_indices_start = 0;
 		let concave_bezier_indices_start = 0;
 
-		let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-			backends: wgpu::Backends::PRIMARY,
-			..Default::default()
-		});
-
-		let surface = instance.create_surface(window.clone()).unwrap();
-
-		let adapter = instance
-			.request_adapter(&wgpu::RequestAdapterOptions {
-				power_preference: wgpu::PowerPreference::default(), // POTENTIALLY SWITCH TO LOW POWER?
-				compatible_surface: Some(&surface),
-				force_fallback_adapter: false,
-			})
-			.await?;
-
-		let (device, queue) = adapter
-			.request_device(&wgpu::DeviceDescriptor {
-				label: None,
-				required_features: wgpu::Features::empty(),
-				required_limits: wgpu::Limits::defaults(),
-				memory_hints: Default::default(),
-				trace: wgpu::Trace::Off,
-				experimental_features: wgpu::ExperimentalFeatures::disabled(),
-			})
-			.await?;
-
-		let surface_caps = surface.get_capabilities(&adapter);
-
-		let surface_format = surface_caps.formats.iter()
-			.find(|f| f.is_srgb())
-			.copied()
-			.unwrap_or(surface_caps.formats[0]);
-
-		let config = wgpu::SurfaceConfiguration {
-			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-			format: surface_format,
-			width: size.width,
-			height: size.height,
-			present_mode: surface_caps.present_modes[0],
-			alpha_mode: surface_caps.alpha_modes[0],
-			view_formats: vec![],
-			desired_maximum_frame_latency: 2,
-		};
-
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some("Shader"),
+			label: Some("Tapestry Shader"),
 			source: wgpu::ShaderSource::Wgsl(include_str!("../triangle_shader.wgsl").into()),
 		});
 
@@ -266,7 +219,7 @@ impl FontRenderer {
 			},
 			depth_stencil: None,
 			multisample: wgpu::MultisampleState {
-				count: 4,
+				count: 1, // SET TO 4 FOR MSAA
 				mask: !0,
 				alpha_to_coverage_enabled: false,
 			},
@@ -277,10 +230,7 @@ impl FontRenderer {
 		let text_boxes: Vec<TextBox> = Vec::new();
 
 		Ok(Self {
-			surface,
 			device,
-			queue,
-			config,
 			is_surface_configured: false,
 			render_pipeline,
 			vertex_buffer,
@@ -297,9 +247,6 @@ impl FontRenderer {
 	pub fn resize(&mut self, width: u32, height: u32) {
 		println!("Resized to: {width}x{height}");
 		if width > 0 && height > 0 {
-			self.config.width = width;
-			self.config.height = height;
-			self.surface.configure(&self.device, &self.config);
 			self.is_surface_configured = true;
 			self.update();
 		}
@@ -314,7 +261,7 @@ impl FontRenderer {
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
 
 		for text_box in self.text_boxes.iter() {
-			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.pixels_per_font_unit, size.into(), text_box.position, vertices.len());
+			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position, vertices.len());
 			vertices.append(&mut vertices_text_box);
 			indices.append(&mut indices_text_box);
 			convex_bezier_indices.append(&mut convex_bezier_indices_text_box);
@@ -347,7 +294,7 @@ impl FontRenderer {
 	}
 
 
-	pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+/* 	pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
 		println!("Rendering");
 
 		if self.number_of_indices == 0 {
@@ -493,7 +440,7 @@ impl FontRenderer {
 		output.present();
 
 		Ok(())
-	}	
+	}	 */
 
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
@@ -503,14 +450,18 @@ impl FontRenderer {
 		self.text_boxes.push(text_box);
 	}
 
-	pub fn draw_text(&self, queue: &wgpu::Queue, output: &wgpu::SurfaceTexture) {
+	pub fn draw_text(&self, queue: &wgpu::Queue, view: &wgpu::TextureView) {
 
-		let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+		/* let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
 			label: Some("Tapestry TextureView"),
 			..Default::default()
-		});
+		}); */
 
-		println!("Tapestry TextureView: {view:?}");
+		// println!("\nTapestry TextureView: {view:?}");
+
+		if self.number_of_indices == 0 {
+			return
+		}
 
 		let size = self.window.inner_size();
 
@@ -536,8 +487,8 @@ impl FontRenderer {
 				label: Some("Render Pass"),
 				color_attachments: &[
 					Some(wgpu::RenderPassColorAttachment {
-						view: &multisample_view,
-						resolve_target: Some(&view),
+						view: &view, // SET TO &multisample_view FOR MSAA
+						resolve_target: None, // SET TO Some(&view) FOR MSAA
 						ops: wgpu::Operations {
 							// load: wgpu::LoadOp::Clear(
 							// 	wgpu::Color {
@@ -559,7 +510,7 @@ impl FontRenderer {
 			});
 
 			render_pass.set_pipeline(&self.render_pipeline);
-			println!("Number of indices: {}", self.number_of_indices);
+			// println!("Number of indices: {}", self.number_of_indices);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 			let convex_bezier_indices_start = self.convex_bezier_indices_start;
@@ -645,6 +596,30 @@ impl FontRenderer {
 pub struct TextBox {
 	pub font: Arc<Font>,
 	pub text: Arc<Mutex<String>>,
-	pub pixels_per_font_unit: f32,
+	pub pixels_per_em: Pixels<f32>,
 	pub position: Position<Pixels<f32>>,
+}
+
+impl TextBox {
+	pub fn get_ideal_width(&self) -> u32 { // Change when type are unified.
+		let mut width: FontUnits<u32> = 0.into();
+		let text_lock = self.text.lock().unwrap();
+		for character in text_lock.chars() {
+			let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+			let glyph = &self.font.glyphs[character_glyph_id as usize];
+			width += glyph.advance_width;
+		}
+		
+		drop(text_lock);
+		width.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u32
+	}
+
+	pub fn get_height(&self) -> u32 {
+		//self.font.units_per_em.to_pixels(self.pixels_per_font_unit).value as u32
+		(self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u32
+	}
+
+	pub fn get_pixels_per_font_unit(&self) -> f32 {
+		self.pixels_per_em.value / self.font.units_per_em.value as f32
+	}
 }

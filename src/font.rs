@@ -9,6 +9,9 @@ pub mod font_renderer;
 pub struct Font {
 	pub glyphs: Vec<Glyph>,
 	pub mappings: Vec<Mapping>,
+	pub units_per_em: FontUnits<u16>,
+	pub typographic_descender: FontUnits<i16>,
+	pub typographic_ascender: FontUnits<i16>,
 }
 
 impl Font {
@@ -126,10 +129,10 @@ impl Glyph {
 				let mut indices: Vec<u32> = Vec::new();
 				let mut convex_bezier_indices: Vec<u32> = Vec::new();
 				let mut concave_bezier_indices: Vec<u32> = Vec::new();
-				println!("Composite Glyph woth Child glyph ids:");
-				for child in data.children.iter() {
-					println!("	{}", child.child_index);
-				}
+				// println!("Composite Glyph with Child glyph ids:");
+				// for child in data.children.iter() {
+				// 	println!("	{}", child.child_index);
+				// }
 				for child in data.children.iter() {
 					let updated_vertices_start = vertices_raw.len() + vertices_start;
 					let offset = offset + child.offset;
@@ -226,6 +229,10 @@ where
 {
 	pub fn to_pixels(&self, pixels_per_font_unit: f32) -> Pixels<f32> {
 		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_font_unit)) as f32).into()
+	}
+
+	pub fn to_pixels_em(&self, pixels_per_em: Pixels<f32>, font_units_per_em: FontUnits<u16>) -> Pixels<f32> {
+		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_em.value) / Into::<f64>::into(font_units_per_em.value)) as f32).into()
 	}
 }
 
