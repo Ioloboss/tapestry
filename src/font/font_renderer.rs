@@ -12,6 +12,7 @@ use super::{Font, Size, Position, FontUnits, Pixels};
 pub struct VertexRaw {
 	pub position: [f32; 2],
 	pub uv_coords: [f32; 2],
+	pub colour: [f32; 3],
 }
 
 impl VertexRaw {
@@ -29,14 +30,19 @@ impl VertexRaw {
 					offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
 					shader_location: 1,
 					format: wgpu::VertexFormat::Float32x2,
-				}
+				},
+				wgpu::VertexAttribute {
+					offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+					shader_location: 2,
+					format: wgpu::VertexFormat::Float32x3,
+				},
 			]
 		}
 	}
 }
 
 pub trait ToRawTriangles {
-	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>);
+	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>);
 }
 
 /* 
@@ -60,7 +66,7 @@ impl ToRawTriangles for GlyphIndex {
 */
 
 impl ToRawTriangles for Mutex<String> {
-	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		let mut advance_offset: FontUnits<i32> = 0.into();
 		let mut vertices_raw: Vec<VertexRaw> = Vec::new();
 		let mut indices: Vec<u32> = Vec::new();
@@ -70,7 +76,7 @@ impl ToRawTriangles for Mutex<String> {
 		for character in string.chars() {
 			let character_glyph_id = font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
 			let glyph = &font.glyphs[character_glyph_id as usize];
-			let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(font, pixels_per_font_unit, (advance_offset, 0.into()).into(), screen_size, position, vertices_raw.len() + vertices_start);
+			let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(font, pixels_per_font_unit, (advance_offset, 0.into()).into(), screen_size, position, vertices_raw.len() + vertices_start, colour);
 			advance_offset += glyph.advance_width;
 			vertices_raw.append(&mut vertices_raw_character);
 			indices.append(&mut indices_character);
@@ -261,7 +267,7 @@ impl FontRenderer {
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
 
 		for text_box in self.text_boxes.iter() {
-			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position, vertices.len());
+			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position, vertices.len(), text_box.colour);
 			vertices.append(&mut vertices_text_box);
 			indices.append(&mut indices_text_box);
 			convex_bezier_indices.append(&mut convex_bezier_indices_text_box);
@@ -598,6 +604,7 @@ pub struct TextBox {
 	pub text: Arc<Mutex<String>>,
 	pub pixels_per_em: Pixels<f32>,
 	pub position: Position<Pixels<f32>>,
+	pub colour: [f32; 3],
 }
 
 impl TextBox {

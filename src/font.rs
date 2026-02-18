@@ -114,10 +114,10 @@ impl Glyph {
 		self.advance_width = horizontal_metric.advance_width.into();
 	}
 
-	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		match &self.data {
 			GlyphData::SimpleGlyph(data) => {
-				let vertices_raw = data.vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position)).collect();
+				let vertices_raw = data.vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position, colour)).collect();
 				let indices: Vec<u32> = data.indices.iter().map(|index| index + vertices_start as u32).collect();
 				let convex_bezier_indices: Vec<u32> = data.convex_bezier_indices.iter().map(|index| index + vertices_start as u32).collect();
 				let concave_bezier_indices: Vec<u32> = data.concave_bezier_indices.iter().map(|index| index + vertices_start as u32).collect();
@@ -136,7 +136,7 @@ impl Glyph {
 				for child in data.children.iter() {
 					let updated_vertices_start = vertices_raw.len() + vertices_start;
 					let offset = offset + child.offset;
-					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.glyphs[child.child_index].to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start);
+					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.glyphs[child.child_index].to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start, colour);
 					vertices_raw.extend(extra_vertices_raw);
 					indices.extend(extra_indices);
 					convex_bezier_indices.extend(extra_convex_bezier_indices);
@@ -149,9 +149,9 @@ impl Glyph {
 				panic!("Parsing glyph failed with error: {error:?}");
 			}
 			GlyphData::None => {
-				let vertices = vec![font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0]},
-					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0]},
-					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0]}
+				let vertices = vec![font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour},
+					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour},
+					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour}
 				];
 				let indices = vec![0, 1, 2];
 				(vertices, indices, Vec::new(), Vec::new())
@@ -345,12 +345,12 @@ impl Vertex {
 }
 
 impl Vertex {
-	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>) -> font_renderer::VertexRaw {
+	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, colour: [f32; 3]) -> font_renderer::VertexRaw {
 		let x = offset.x + self.x;
 		let y = offset.y + self.y;
 		let transformed_x = (x.to_pixels(pixels_per_font_unit) + position.x).to_screen_space(screen_size.width);
 		let transformed_y = (y.to_pixels(pixels_per_font_unit) + position.y).to_screen_space(screen_size.height);
-		font_renderer::VertexRaw{ position: [transformed_x.value, transformed_y.value], uv_coords: self.uv_coords }
+		font_renderer::VertexRaw{ position: [transformed_x.value, transformed_y.value], uv_coords: self.uv_coords, colour }
 	}
 }
 
