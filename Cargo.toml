@@ -10,3 +10,5 @@ log = "0.4.28"
 pollster = "0.4.0"
 wgpu = "27.0.1"
 winit = "0.30.12"
+#mircalla_types = { path = "../mircalla_types" }
+mircalla_types = { git = "https://github.com/ioloboss/mircalla_types" }

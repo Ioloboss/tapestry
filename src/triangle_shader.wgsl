@@ -31,7 +31,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 		return vec4<f32>(in.colour, 1.0);
 	} else if mode == 1 {
 		if pow(in.uv_coordinates[0], 2) <= in.uv_coordinates[1] {
-			return vec4<f32>(0.216, 0.022, 0.022, 1.0);
+			return vec4<f32>(in.colour, 1.0);
 		} else {
 			return vec4<f32>(0, 0, 0, 0);
 		}

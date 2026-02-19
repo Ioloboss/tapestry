@@ -1,10 +1,11 @@
+use mircalla_types::{vectors::{Colour, Size, Position}, units::{Pixels, ScreenSpace}};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 use std::sync::{Arc, Mutex};
 
-use crate::font::Vertex;
+use crate::font::{ToPixelsSize, Vertex};
 
-use super::{Font, Size, Position, FontUnits, Pixels};
+use super::{Font, FontUnits};
 
 
 #[repr(C)]
@@ -42,7 +43,7 @@ impl VertexRaw {
 }
 
 pub trait ToRawTriangles {
-	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>);
+	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>);
 }
 
 /* 
@@ -66,7 +67,7 @@ impl ToRawTriangles for GlyphIndex {
 */
 
 impl ToRawTriangles for Mutex<String> {
-	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		let mut advance_offset: FontUnits<i32> = 0.into();
 		let mut vertices_raw: Vec<VertexRaw> = Vec::new();
 		let mut indices: Vec<u32> = Vec::new();
@@ -250,16 +251,14 @@ impl FontRenderer {
 		})
 	}
 
-	pub fn resize(&mut self, width: u32, height: u32) {
-		println!("Resized to: {width}x{height}");
-		if width > 0 && height > 0 {
+	pub fn resize(&mut self, size: Size<Pixels<f32>>) {
+		if size.width.value > 0.0 && size.height.value > 0.0 {
 			self.is_surface_configured = true;
-			self.update();
 		}
 	}
 
 	pub fn update(&mut self) {
-		let size = self.window.inner_size();
+		let size = self.window.inner_size().to_pixels_size();
 
 		let mut vertices: Vec<VertexRaw> = Vec::new();
 		let mut indices: Vec<u32> = Vec::new();
@@ -267,7 +266,7 @@ impl FontRenderer {
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
 
 		for text_box in self.text_boxes.iter() {
-			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position, vertices.len(), text_box.colour);
+			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size, text_box.position, vertices.len(), text_box.colour);
 			vertices.append(&mut vertices_text_box);
 			indices.append(&mut indices_text_box);
 			convex_bezier_indices.append(&mut convex_bezier_indices_text_box);
@@ -604,11 +603,11 @@ pub struct TextBox {
 	pub text: Arc<Mutex<String>>,
 	pub pixels_per_em: Pixels<f32>,
 	pub position: Position<Pixels<f32>>,
-	pub colour: [f32; 3],
+	pub colour: Colour,
 }
 
 impl TextBox {
-	pub fn get_ideal_width(&self) -> u32 { // Change when type are unified.
+	pub fn get_ideal_width(&self) -> Pixels<f32> { // Change when type are unified.
 		let mut width: FontUnits<u32> = 0.into();
 		let text_lock = self.text.lock().unwrap();
 		for character in text_lock.chars() {
@@ -618,12 +617,12 @@ impl TextBox {
 		}
 		
 		drop(text_lock);
-		width.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u32
+		width.to_pixels_em(self.pixels_per_em, self.font.units_per_em)
 	}
 
-	pub fn get_height(&self) -> u32 {
+	pub fn get_height(&self) -> Pixels<f32> {
 		//self.font.units_per_em.to_pixels(self.pixels_per_font_unit).value as u32
-		(self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u32
+		(self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em)
 	}
 
 	pub fn get_pixels_per_font_unit(&self) -> f32 {

@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use mircalla_types::{units::Pixels, vectors::{Colour, Position, Size}};
 use winit::dpi::PhysicalSize;
 
 use crate::ttf_reader::{self, HorizontalMetric};
@@ -114,7 +115,7 @@ impl Glyph {
 		self.advance_width = horizontal_metric.advance_width.into();
 	}
 
-	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: [f32; 3]) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		match &self.data {
 			GlyphData::SimpleGlyph(data) => {
 				let vertices_raw = data.vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position, colour)).collect();
@@ -149,9 +150,9 @@ impl Glyph {
 				panic!("Parsing glyph failed with error: {error:?}");
 			}
 			GlyphData::None => {
-				let vertices = vec![font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour},
-					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour},
-					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour}
+				let vertices = vec![font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour: colour.into()},
+					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour: colour.into()},
+					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour: colour.into()}
 				];
 				let indices = vec![0, 1, 2];
 				(vertices, indices, Vec::new(), Vec::new())
@@ -168,40 +169,17 @@ pub struct Bounds {
 	pub y_max: i16,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Size<T> {
-	pub width: T,
-	pub height: T,
+pub trait ToPixelsSize<T> {
+	fn to_pixels_size(self) -> Size<Pixels<T>>;
 }
 
-impl<T> From<(T, T)> for Size<T> {
-	fn from(value: (T, T)) -> Self {
-		Self { width: value.0, height: value.1 }
+impl ToPixelsSize<f32> for PhysicalSize<u32> {
+	fn to_pixels_size(self) -> Size<Pixels<f32>> {
+		Size { width: (self.width as f32).into(), height: (self.height as f32).into() }
 	}
 }
 
-impl From<PhysicalSize<u32>> for Size<Pixels<f32>> {
-	fn from(value: PhysicalSize<u32>) -> Self {
-		Self { width: (value.width as f32).into(), height: (value.height as f32).into() }
-	}
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Position<T> {
-	pub x: T,
-	pub y: T,
-}
-
-impl<A, B> From<(A, A)> for Position<B> 
-where
-	A: Into<B>
-{
-	fn from(value: (A, A)) -> Self {
-		Self { x: value.0.into(), y: value.1.into() }
-	}
-}
-
-impl<T> std::ops::Add for Position<FontUnits<T>>
+/* impl<T> std::ops::Add for Position<FontUnits<T>>
 where
 	T: Copy + Into<i64> + std::ops::Add<Output = T>
 {
@@ -213,7 +191,7 @@ where
 			y: self.y + rhs.y,
 		}
 	}
-}
+} */
 
 #[derive(Debug, PartialEq, Copy, Clone, PartialOrd)]
 pub struct FontUnits<T>
@@ -282,54 +260,6 @@ where
 	}
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct Pixels<T> {
-	pub value: T,
-}
-
-impl <T> Pixels<T> 
-where
-	T: Into<f32> + Copy
-{
-	pub fn to_screen_space(&self, screen_dimension: Pixels<f32>) -> ScreenSpace {
-		(((self.value.into() / screen_dimension.value) * 2.0) - 1.0).into()
-	}
-}
-
-
-impl <T> From<T> for Pixels<T> {
-	fn from(input: T) -> Self {
-		Self { value: input }
-	}
-}
-
-impl <A, B> std::ops::Add<Pixels<B>> for Pixels<A>
-where
-	A: std::ops::Add + Copy,
-	B: Into<A> + Copy,
-	<A as std::ops::Add>::Output: Copy
-{
-	type Output = Pixels<<A as std::ops::Add>::Output>;
-
-	fn add(self, rhs: Pixels<B>) -> Self::Output {
-		Self::Output { value: self.value + rhs.value.into()}
-	}
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct ScreenSpace {
-	pub value: f32,
-}
-
-impl <T> From<T> for ScreenSpace 
-where
-	T: Into<f32>
-{
-	fn from(input: T) -> Self {
-		Self { value: input.into() }
-	}
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Vertex {
 	pub x: FontUnits<i16>,
@@ -345,12 +275,12 @@ impl Vertex {
 }
 
 impl Vertex {
-	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, colour: [f32; 3]) -> font_renderer::VertexRaw {
+	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, colour: Colour) -> font_renderer::VertexRaw {
 		let x = offset.x + self.x;
 		let y = offset.y + self.y;
 		let transformed_x = (x.to_pixels(pixels_per_font_unit) + position.x).to_screen_space(screen_size.width);
 		let transformed_y = (y.to_pixels(pixels_per_font_unit) + position.y).to_screen_space(screen_size.height);
-		font_renderer::VertexRaw{ position: [transformed_x.value, transformed_y.value], uv_coords: self.uv_coords, colour }
+		font_renderer::VertexRaw{ position: [transformed_x.value, transformed_y.value], uv_coords: self.uv_coords, colour: colour.into() }
 	}
 }
 

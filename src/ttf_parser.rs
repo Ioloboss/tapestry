@@ -1,4 +1,6 @@
-use crate::{font::{self, Bounds, FontUnits, GlyphParseError, Position, ToTriangles, Vertex}, ttf_reader::{ComponentGlyphRaw, CompositeGlyphRaw, GlyphDataRaw, GlyphRaw, SimpleGlyphRaw}};
+use mircalla_types::vectors::Position;
+
+use crate::{font::{self, Bounds, FontUnits, GlyphParseError, ToTriangles, Vertex}, ttf_reader::{ComponentGlyphRaw, CompositeGlyphRaw, GlyphDataRaw, GlyphRaw, SimpleGlyphRaw}};
 
 impl From<GlyphIntermediate> for font::Glyph {
 	fn from(value: GlyphIntermediate) -> Self {
