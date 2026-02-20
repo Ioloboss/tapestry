@@ -173,9 +173,9 @@ pub trait ToPixelsSize<T> {
 	fn to_pixels_size(self) -> Size<Pixels<T>>;
 }
 
-impl ToPixelsSize<f32> for PhysicalSize<u32> {
-	fn to_pixels_size(self) -> Size<Pixels<f32>> {
-		Size { width: (self.width as f32).into(), height: (self.height as f32).into() }
+impl ToPixelsSize<u16> for PhysicalSize<u32> {
+	fn to_pixels_size(self) -> Size<Pixels<u16>> {
+		Size { width: (self.width as u16).into(), height: (self.height as u16).into() }
 	}
 }
 
@@ -211,6 +211,10 @@ where
 
 	pub fn to_pixels_em(&self, pixels_per_em: Pixels<f32>, font_units_per_em: FontUnits<u16>) -> Pixels<f32> {
 		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_em.value) / Into::<f64>::into(font_units_per_em.value)) as f32).into()
+	}
+
+	pub fn to_pixels_rounded(&self, pixels_per_font_unit: f32) -> Pixels<u16> {
+		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_font_unit)) as u16).into()
 	}
 }
 

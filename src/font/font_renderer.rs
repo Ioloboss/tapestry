@@ -266,7 +266,7 @@ impl FontRenderer {
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
 
 		for text_box in self.text_boxes.iter() {
-			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size, text_box.position, vertices.len(), text_box.colour);
+			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position.into(), vertices.len(), text_box.colour);
 			vertices.append(&mut vertices_text_box);
 			indices.append(&mut indices_text_box);
 			convex_bezier_indices.append(&mut convex_bezier_indices_text_box);
@@ -602,12 +602,12 @@ pub struct TextBox {
 	pub font: Arc<Font>,
 	pub text: Arc<Mutex<String>>,
 	pub pixels_per_em: Pixels<f32>,
-	pub position: Position<Pixels<f32>>,
+	pub position: Position<Pixels<u16>>,
 	pub colour: Colour,
 }
 
 impl TextBox {
-	pub fn get_ideal_width(&self) -> Pixels<f32> { // Change when type are unified.
+	pub fn get_ideal_width(&self) -> Pixels<u16> { // Change when type are unified.
 		let mut width: FontUnits<u32> = 0.into();
 		let text_lock = self.text.lock().unwrap();
 		for character in text_lock.chars() {
@@ -617,12 +617,12 @@ impl TextBox {
 		}
 		
 		drop(text_lock);
-		width.to_pixels_em(self.pixels_per_em, self.font.units_per_em)
+		(width.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u16).into()
 	}
 
-	pub fn get_height(&self) -> Pixels<f32> {
+	pub fn get_height(&self) -> Pixels<u16> {
 		//self.font.units_per_em.to_pixels(self.pixels_per_font_unit).value as u32
-		(self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em)
+		((self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u16).into()
 	}
 
 	pub fn get_pixels_per_font_unit(&self) -> f32 {
