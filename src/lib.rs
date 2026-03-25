@@ -1,6 +1,9 @@
 pub mod ttf_reader;
 pub mod ttf_parser;
 pub mod font;
+
+pub mod linked_list;
+
 pub mod read {
 	use crate::font::{self, Font, ToTriangles};
 	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};
@@ -104,7 +107,6 @@ pub mod read {
 
 			for _ in 0..number_of_tables {
 				let table_record: TableRecord = ttf_reader.read_bytes().unwrap();
-				println!("Table Record: {table_record:?}");
 				match table_record.table_tag {
 					TableTag::Glyph => glyph_table_record = Some(table_record),
 					TableTag::MaximumProfile => maximum_profile_table_record = Some(table_record),
@@ -168,12 +170,15 @@ pub mod read {
 				glyph.set_horizontal_metrics(horizontal_metric);
 			}
 
-			println!("os/2 Descender: {:?}", os2_and_windows_metrics_table.s_typographic_descender);
+			/* println!("os/2 Descender: {:?}", os2_and_windows_metrics_table.s_typographic_descender);
 			println!("hhea descender: {:?}", horizontal_header_table.descender);
 			println!("os/2 table typo: {:?}", os2_and_windows_metrics_table);
 			println!("os/2 table windows: {:?}", os2_and_windows_metrics_table.us_windows_descend);
 
-			println!("Units Per Em: {:?}", font_header_table.units_per_em);
+			println!("os/2 flag bit 7: {:?}", os2_and_windows_metrics_table.fs_selection & 0x80 > 0);
+
+
+			println!("Units Per Em: {:?}", font_header_table.units_per_em); */
 
 
 			Font {
@@ -182,6 +187,9 @@ pub mod read {
 				units_per_em: font_header_table.units_per_em.into(),
 				typographic_descender: (os2_and_windows_metrics_table.us_windows_descend as i16).into(),
 				typographic_ascender: (os2_and_windows_metrics_table.us_windows_ascent as i16).into(),
+				//typographic_descender: (-os2_and_windows_metrics_table.s_typographic_descender).into(),
+				//typographic_ascender: (os2_and_windows_metrics_table.s_typographic_ascender).into(),
+				line_spacing: (os2_and_windows_metrics_table.s_typographic_ascender - os2_and_windows_metrics_table.s_typographic_descender + os2_and_windows_metrics_table.s_typographic_line_gap).into()
 			}
 
 		}
