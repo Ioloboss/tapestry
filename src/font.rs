@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 use mircalla_types::{units::Pixels, vectors::{Colour, Position, Size}};
 use winit::dpi::PhysicalSize;
@@ -13,6 +13,7 @@ pub struct Font {
 	pub units_per_em: FontUnits<u16>,
 	pub typographic_descender: FontUnits<i16>,
 	pub typographic_ascender: FontUnits<i16>,
+	pub line_spacing: FontUnits<i16>,
 }
 
 impl Font {
@@ -42,7 +43,7 @@ impl Font {
 	pub fn number_of_failed_parse(&self) -> usize {
 		let mut count = 0;
 		for glyph in &self.glyphs {
-			if let GlyphData::FailedParse(error) = &glyph.data {
+			if let GlyphData::FailedParse(_) = &glyph.data {
 				count += 1;
 			}
 		}
@@ -65,6 +66,19 @@ pub enum GlyphParseError {
 	HoleDoesNotHaveParent,
 	NoValidChannel,
 }
+
+impl Display for GlyphParseError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		use GlyphParseError::*;
+		match self {
+			StuckInTriangulisationLoop => write!(f, "stuck in triangulisation loop"),
+			HoleDoesNotHaveParent => write!(f, "hole does not have parent"),
+			NoValidChannel => write!(f, "no valid channel"),
+		}
+	}
+}
+
+impl Error for GlyphParseError {}
 
 pub enum GlyphData {
 	SimpleGlyph(SimpleGlyph),
@@ -115,10 +129,10 @@ impl Glyph {
 		self.advance_width = horizontal_metric.advance_width.into();
 	}
 
-	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	pub fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<i32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour, bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>)) -> (Vec<font_renderer::VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		match &self.data {
 			GlyphData::SimpleGlyph(data) => {
-				let vertices_raw = data.vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position, colour)).collect();
+				let vertices_raw = data.vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position, colour, bounds)).collect();
 				let indices: Vec<u32> = data.indices.iter().map(|index| index + vertices_start as u32).collect();
 				let convex_bezier_indices: Vec<u32> = data.convex_bezier_indices.iter().map(|index| index + vertices_start as u32).collect();
 				let concave_bezier_indices: Vec<u32> = data.concave_bezier_indices.iter().map(|index| index + vertices_start as u32).collect();
@@ -137,7 +151,7 @@ impl Glyph {
 				for child in data.children.iter() {
 					let updated_vertices_start = vertices_raw.len() + vertices_start;
 					let offset = offset + child.offset;
-					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.glyphs[child.child_index].to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start, colour);
+					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.glyphs[child.child_index].to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start, colour, bounds);
 					vertices_raw.extend(extra_vertices_raw);
 					indices.extend(extra_indices);
 					convex_bezier_indices.extend(extra_convex_bezier_indices);
@@ -173,9 +187,9 @@ pub trait ToPixelsSize<T> {
 	fn to_pixels_size(self) -> Size<Pixels<T>>;
 }
 
-impl ToPixelsSize<u16> for PhysicalSize<u32> {
-	fn to_pixels_size(self) -> Size<Pixels<u16>> {
-		Size { width: (self.width as u16).into(), height: (self.height as u16).into() }
+impl ToPixelsSize<i32> for PhysicalSize<u32> {
+	fn to_pixels_size(self) -> Size<Pixels<i32>> {
+		Size { width: (self.width as i32).into(), height: (self.height as i32).into() }
 	}
 }
 
@@ -213,8 +227,8 @@ where
 		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_em.value) / Into::<f64>::into(font_units_per_em.value)) as f32).into()
 	}
 
-	pub fn to_pixels_rounded(&self, pixels_per_font_unit: f32) -> Pixels<u16> {
-		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_font_unit)) as u16).into()
+	pub fn to_pixels_rounded(&self, pixels_per_font_unit: f32) -> Pixels<i32> {
+		((Into::<f64>::into(self.value) * Into::<f64>::into(pixels_per_font_unit)) as i32).into()
 	}
 }
 
@@ -225,6 +239,12 @@ where
 {
 	fn from(input: T) -> Self {
 		Self { value: input }
+	}
+}
+
+impl From<FontUnits<u16>> for FontUnits<i32> {
+	fn from(value: FontUnits<u16>) -> Self {
+		Self { value: value.value.into() }
 	}
 }
 
@@ -264,52 +284,80 @@ where
 	}
 }
 
+impl <A, B> std::ops::SubAssign<FontUnits<B>> for FontUnits<A>
+where
+	FontUnits<A>: std::ops::Sub<FontUnits<B>, Output = FontUnits<A>>,
+	B: Copy + Into<i64>,
+	A: Copy + Into<i64>,
+{
+	fn sub_assign(&mut self, rhs: FontUnits<B>) {
+		*self = *self - rhs;
+	}
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Vertex {
-	pub x: FontUnits<i16>,
-	pub y: FontUnits<i16>,
+	pub position: Position<FontUnits<i16>>,
 	pub on_curve: bool,
 	pub uv_coords: [f32; 2],
 }
 
 impl Vertex {
-	pub fn same_position(&self, other_vertex: &Self) -> bool{
-		(self.x == other_vertex.x) && (self.y == other_vertex.y)
+	pub fn distance_squared(&self, other_vertex: &Self) -> i64 {
+		(self.position.x.value as i64 - other_vertex.position.x.value as i64).pow(2)
+		+ (self.position.y.value as i64 - other_vertex.position.y.value as i64).pow(2)
 	}
-}
 
-impl Vertex {
-	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, colour: Colour) -> font_renderer::VertexRaw {
-		let x = offset.x + self.x;
-		let y = offset.y + self.y;
-		let transformed_x = (x.to_pixels(pixels_per_font_unit) + position.x).to_screen_space(screen_size.width);
-		let transformed_y = (y.to_pixels(pixels_per_font_unit) + position.y).to_screen_space(screen_size.height);
+	pub fn same_position(&self, other_vertex: &Self) -> bool{
+		(self.position.x == other_vertex.position.x) && (self.position.y == other_vertex.position.y)
+	}
+
+	fn to_raw(&self, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<i32>>, position: Position<Pixels<f32>>, colour: Colour, bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>)) -> font_renderer::VertexRaw {
+		let x = offset.x + self.position.x;
+		let y = offset.y + self.position.y;
+		let mut x_pixels = x.to_pixels(pixels_per_font_unit) + position.x;
+		if x_pixels < bounds.0.x.into() {
+			x_pixels = bounds.0.x.into();
+		}
+		if x_pixels > bounds.1.x.into() {
+			x_pixels = bounds.1.x.into();
+		}
+
+		let mut y_pixels = y.to_pixels(pixels_per_font_unit) + position.y;
+
+		if y_pixels < bounds.0.y.into() {
+			y_pixels = bounds.0.y.into();
+		}
+		if y_pixels > bounds.1.y.into() {
+			y_pixels = bounds.1.y.into();
+		}
+
+		let transformed_x = x_pixels.to_screen_space(screen_size.width);
+		let transformed_y = y_pixels.to_screen_space(screen_size.height);
 		font_renderer::VertexRaw{ position: [transformed_x.value, transformed_y.value], uv_coords: self.uv_coords, colour: colour.into() }
 	}
 }
 
 impl Vertex {
 	pub fn new(x: i16, y: i16) -> Self {
-		Self { x: x.into(), y: y.into(), on_curve: true, uv_coords: [0.0, 0.0]}
+		Self { position: (x, y).into(), on_curve: true, uv_coords: [0.0, 0.0]}
 	}
 
 	pub fn with_changed_uv_coord(&self, uv_coords: [f32; 2]) -> Self {
-		let x = self.x;
-		let y = self.y;
 		let on_curve = self.on_curve;
-		Self { x, y, on_curve, uv_coords, }
+		Self { position: self.position, on_curve, uv_coords, }
 	}
 }
 
 impl From<(i16, i16)> for Vertex {
 	fn from(value: (i16, i16)) -> Self {
-		Vertex { x: value.0.into(), y: value.1.into(), on_curve: true, uv_coords: [0.0, 0.0] }
+		Vertex { position: value.into(), on_curve: true, uv_coords: [0.0, 0.0] }
 	}
 } 
 
 impl Display for Vertex {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "({}, {})", self.x.value, self.y.value)
+		write!(f, "({}, {})", self.position.x.value, self.position.y.value)
 	}
 }
 

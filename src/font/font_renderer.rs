@@ -1,9 +1,9 @@
-use mircalla_types::{vectors::{Colour, Size, Position}, units::{Pixels, ScreenSpace}};
+use mircalla_types::{units::{Pixels}, vectors::{Alignment, Alignments, Colour, Position, Size}};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}};
 
-use crate::font::{ToPixelsSize, Vertex};
+use crate::font::{ToPixelsSize};
 
 use super::{Font, FontUnits};
 
@@ -66,6 +66,7 @@ impl ToRawTriangles for GlyphIndex {
 }
 */
 
+/* 
 impl ToRawTriangles for Mutex<String> {
 	fn to_raw(&self, font: &Font, pixels_per_font_unit: f32, screen_size: Size<Pixels<f32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		let mut advance_offset: FontUnits<i32> = 0.into();
@@ -87,7 +88,7 @@ impl ToRawTriangles for Mutex<String> {
 		drop(string);
 		(vertices_raw, indices, convex_bezier_indices, concave_bezier_indices)
 	}
-}
+} */
 
 fn to_linear_rgb(color_chanel: u8) -> f32 {
 	let value = color_chanel as f32 / 255.0;
@@ -132,9 +133,6 @@ pub struct FontRenderer {
 
 impl FontRenderer {
 	pub async fn new(window: Arc<Window>, device: Arc<wgpu::Device>, config: &wgpu::SurfaceConfiguration) -> Result<Self, NewRendererStateError> {
-		println!("New FontRenderer");
-		let size = window.inner_size();
-
 		let convex_bezier_indices_start = 0;
 		let concave_bezier_indices_start = 0;
 
@@ -251,8 +249,8 @@ impl FontRenderer {
 		})
 	}
 
-	pub fn resize(&mut self, size: Size<Pixels<f32>>) {
-		if size.width.value > 0.0 && size.height.value > 0.0 {
+	pub fn resize(&mut self, size: Size<Pixels<i32>>) {
+		if size.width.value > 0 && size.height.value > 0 {
 			self.is_surface_configured = true;
 		}
 	}
@@ -266,7 +264,7 @@ impl FontRenderer {
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
 
 		for text_box in self.text_boxes.iter() {
-			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.text.to_raw(&*text_box.font, text_box.get_pixels_per_font_unit(), size.into(), text_box.position.into(), vertices.len(), text_box.colour);
+			let (mut vertices_text_box, mut indices_text_box, mut convex_bezier_indices_text_box, mut concave_bezier_indices_text_box) = text_box.to_raw(size.into(), vertices.len());
 			vertices.append(&mut vertices_text_box);
 			indices.append(&mut indices_text_box);
 			convex_bezier_indices.append(&mut convex_bezier_indices_text_box);
@@ -277,7 +275,6 @@ impl FontRenderer {
 		indices.extend(convex_bezier_indices);
 		let concave_bezier_indices_start = indices.len();
 		indices.extend(concave_bezier_indices);
-
 
 		let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Vertex Buffer"),
@@ -300,7 +297,6 @@ impl FontRenderer {
 
 
 /* 	pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-		println!("Rendering");
 
 		if self.number_of_indices == 0 {
 			return Ok(());
@@ -361,7 +357,6 @@ impl FontRenderer {
 			});
 
 			render_pass.set_pipeline(&self.render_pipeline);
-			println!("Number of indices: {}", self.number_of_indices);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 			let convex_bezier_indices_start = self.convex_bezier_indices_start;
@@ -462,8 +457,6 @@ impl FontRenderer {
 			..Default::default()
 		}); */
 
-		// println!("\nTapestry TextureView: {view:?}");
-
 		if self.number_of_indices == 0 {
 			return
 		}
@@ -515,7 +508,6 @@ impl FontRenderer {
 			});
 
 			render_pass.set_pipeline(&self.render_pipeline);
-			// println!("Number of indices: {}", self.number_of_indices);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 			let convex_bezier_indices_start = self.convex_bezier_indices_start;
@@ -598,34 +590,359 @@ impl FontRenderer {
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct WrapOptions {
+	pub wrap_on: WrapOn,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WrapOn {
+	Character,
+	Whitespace,
+}
+
+#[derive(Clone)]
 pub struct TextBox {
 	pub font: Arc<Font>,
 	pub text: Arc<Mutex<String>>,
 	pub pixels_per_em: Pixels<f32>,
-	pub position: Position<Pixels<u16>>,
+	pub position: Position<Pixels<i32>>,
+	pub text_box_size: Size<Pixels<i32>>,
+	pub bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>),
 	pub colour: Colour,
+	pub wrap_options: WrapOptions,
+	pub alignment: Alignment,
 }
 
 impl TextBox {
-	pub fn get_ideal_width(&self) -> Pixels<u16> { // Change when type are unified.
+	pub fn get_ideal_width(&self) -> Pixels<i32> { // Change when type are unified.
 		let mut width: FontUnits<u32> = 0.into();
 		let text_lock = self.text.lock().unwrap();
-		for character in text_lock.chars() {
-			let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-			let glyph = &self.font.glyphs[character_glyph_id as usize];
-			width += glyph.advance_width;
-		}
+		for line in text_lock.lines() {
+			let mut line_width: FontUnits<u32> = 0.into();
+			for character in line.chars() {
+				let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+				let glyph = &self.font.glyphs[character_glyph_id as usize];
+				line_width += glyph.advance_width;
+			}
+			if line_width > width {
+				width = line_width;
+			}
+		};
 		
 		drop(text_lock);
-		(width.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u16).into()
+		(width.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value.ceil() as i32).into()
 	}
 
-	pub fn get_height(&self) -> Pixels<u16> {
-		//self.font.units_per_em.to_pixels(self.pixels_per_font_unit).value as u32
-		((self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value as u16).into()
+	pub fn get_height_offset(&self) -> Pixels<i32> {
+		(self.font.typographic_ascender + self.font.typographic_descender).to_pixels_rounded(self.get_pixels_per_font_unit())
 	}
 
 	pub fn get_pixels_per_font_unit(&self) -> f32 {
 		self.pixels_per_em.value / self.font.units_per_em.value as f32
+	}
+
+	pub fn get_height(&self, width: Pixels<i32>) -> Pixels<i32> {
+		let mut advance_offset: FontUnits<i32> = 0.into();
+		let mut vertical_offset: FontUnits<i32> = 0.into();
+		let string = self.text.lock().unwrap();
+
+		let mut first_line = true;
+
+		for line in string.lines() {
+			if !first_line {
+				advance_offset = 0.into();
+				vertical_offset += self.font.line_spacing;
+			}
+			match self.wrap_options.wrap_on {
+				WrapOn::Character => {
+					for character in line.chars() {
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > width.into() {
+
+							advance_offset = 0.into();
+							vertical_offset += self.font.line_spacing;
+						}
+
+						advance_offset += glyph.advance_width;
+					}
+				},
+				WrapOn::Whitespace => {
+					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let mut add_space = false;
+					let mut first_word = true;
+					for word in line.split_whitespace() {
+						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							word_advance_width += glyph.advance_width;
+						}
+
+						let future_advance_offset = (advance_offset + word_advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > width.into() {
+							advance_offset = 0.into();
+							vertical_offset += self.font.line_spacing;
+							add_space = false;
+						} else if !first_word {
+							add_space = true;
+						}
+
+						if add_space {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							advance_offset += glyph.advance_width;
+						}
+
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							advance_offset += glyph.advance_width;
+						}
+
+						first_word = false;
+
+					}
+				}
+			}
+			first_line = false;
+		}
+		drop(string);
+
+
+		((vertical_offset + self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value.ceil() as i32).into()
+	}
+
+	pub fn get_text_size(&self, width: Pixels<i32>) -> Size<Pixels<i32>> {
+		let mut advance_offset: FontUnits<i32> = 0.into();
+		let mut vertical_offset: FontUnits<i32> = 0.into();
+		let mut max_advance_offset: FontUnits<i32> = 0.into();
+		let string = self.text.lock().unwrap();
+
+		let mut first_line = true;
+
+		for line in string.lines() {
+			if !first_line {
+				advance_offset = 0.into();
+				vertical_offset += self.font.line_spacing;
+			}
+			match self.wrap_options.wrap_on {
+				WrapOn::Character => {
+					for character in line.chars() {
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > width.into() {
+
+							advance_offset = 0.into();
+							vertical_offset += self.font.line_spacing;
+						}
+
+						advance_offset += glyph.advance_width;
+						if advance_offset > max_advance_offset {
+							max_advance_offset = advance_offset;
+						}
+					}
+				},
+				WrapOn::Whitespace => {
+					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let mut add_space = false;
+					let mut first_word = true;
+					for word in line.split_whitespace() {
+						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							word_advance_width += glyph.advance_width;
+						}
+
+						let future_advance_offset = (advance_offset + word_advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > width.into() {
+							advance_offset = 0.into();
+							vertical_offset += self.font.line_spacing;
+							add_space = false;
+						} else if !first_word {
+							add_space = true;
+						}
+
+						if add_space {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							advance_offset += glyph.advance_width;
+						}
+
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							advance_offset += glyph.advance_width;
+							if advance_offset > max_advance_offset {
+								max_advance_offset = advance_offset;
+							}
+						}
+
+						first_word = false;
+
+					}
+				}
+			}
+			first_line = false;
+		}
+		drop(string);
+
+
+		(max_advance_offset.to_pixels_em(self.pixels_per_em, self.font.units_per_em).value.ceil() as i32, (vertical_offset + self.font.typographic_ascender + self.font.typographic_descender).to_pixels_em(self.pixels_per_em, self.font.units_per_em).value.ceil() as i32).into()
+	}
+}
+
+impl TextBox {
+	fn to_raw(&self, screen_size: Size<Pixels<i32>>, vertices_start: usize) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+		let mut advance_offset: FontUnits<i32> = 0.into();
+		let mut vertical_offset: FontUnits<i32> = 0.into();
+		let mut vertices_raw: Vec<VertexRaw> = Vec::new();
+		let mut indices: Vec<u32> = Vec::new();
+		let mut convex_bezier_indices: Vec<u32> = Vec::new();
+		let mut concave_bezier_indices: Vec<u32> = Vec::new();
+
+		let text_size = self.get_text_size(self.text_box_size.width);
+
+		let string = self.text.lock().unwrap();
+
+		let mut first_line = true;
+
+		let mut position: Position<Pixels<i32>> = (0, 0).into();
+
+		position.x = match self.alignment.x {
+			Alignments::Start => self.position.x,
+			Alignments::Centre => {
+				self.position.x + ((self.text_box_size.width - text_size.width) / 2)
+			},
+			Alignments::End => {
+				self.position.x + (self.text_box_size.width - text_size.width)
+			},
+		};
+
+		position.y = match self.alignment.y {
+			Alignments::Start => self.position.y,
+			Alignments::Centre => {
+				self.position.y - ((self.text_box_size.height - text_size.height) / 2)
+			},
+			Alignments::End => {
+				self.position.y - (self.text_box_size.height - text_size.height)
+			},
+		};
+
+		for line in string.lines() {
+			if !first_line {
+				advance_offset = 0.into();
+				vertical_offset -= self.font.line_spacing;
+			}
+			match self.wrap_options.wrap_on {
+				WrapOn::Character => {
+					for character in line.chars() {
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > self.text_box_size.width.into() {
+							advance_offset = 0.into();
+							vertical_offset -= self.font.line_spacing;
+						}
+
+						let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+						advance_offset += glyph.advance_width;
+						vertices_raw.append(&mut vertices_raw_character);
+						indices.append(&mut indices_character);
+						convex_bezier_indices.append(&mut convex_bezier_indices_character);
+						concave_bezier_indices.append(&mut concave_bezier_indices_character);
+					}
+				},
+				WrapOn::Whitespace => {
+					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let mut add_space = false;
+					let mut first_word = true;
+					for word in line.split_whitespace() {
+						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							word_advance_width += glyph.advance_width;
+						}
+
+						let future_advance_offset = (advance_offset + word_advance_width).to_pixels(self.get_pixels_per_font_unit());
+						if future_advance_offset > self.text_box_size.width.into() {
+							advance_offset = 0.into();
+							vertical_offset -= self.font.line_spacing;
+							add_space = false;
+						} else if !first_word {
+							add_space = true;
+						}
+
+						if add_space {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+							advance_offset += glyph.advance_width;
+							vertices_raw.append(&mut vertices_raw_character);
+							indices.append(&mut indices_character);
+							convex_bezier_indices.append(&mut convex_bezier_indices_character);
+							concave_bezier_indices.append(&mut concave_bezier_indices_character);
+						}
+
+						for character in word.chars() {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+							let glyph = &self.font.glyphs[character_glyph_id as usize];
+
+							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+							advance_offset += glyph.advance_width;
+							vertices_raw.append(&mut vertices_raw_character);
+							indices.append(&mut indices_character);
+							convex_bezier_indices.append(&mut convex_bezier_indices_character);
+							concave_bezier_indices.append(&mut concave_bezier_indices_character);
+						}
+
+						first_word = false;
+					}
+				}
+			}
+			first_line = false;
+		}
+		drop(string);
+		(vertices_raw, indices, convex_bezier_indices, concave_bezier_indices)
+	}
+}
+
+impl TextBox {
+	pub fn new(font: Arc<Font>, text: Arc<Mutex<String>>, pixels_per_em: Pixels<f32>, colour: Colour, wrap_options: WrapOptions) -> TextBox {
+		TextBox {
+			font,
+			text,
+			pixels_per_em,
+			position: (0, 0).into(),
+			text_box_size: (0, 0).into(),
+			bounds: ((0, 0).into(), (i32::MAX, i32::MAX).into()),
+			colour,
+			wrap_options,
+			alignment: Alignment { x: mircalla_types::vectors::Alignments::Start, y: mircalla_types::vectors::Alignments::Start }
+		}
+	}
+
+	pub fn alignment(mut self, alignment: Alignment) -> TextBox {
+		self.alignment = alignment;
+		self
 	}
 }
