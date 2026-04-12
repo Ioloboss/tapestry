@@ -1,17 +1,19 @@
 pub mod ttf_reader;
-pub mod ttf_parser_old;
+//pub mod ttf_parser_old;
 pub mod ttf_parser;
 pub mod font;
 
 pub mod linked_list;
 
 pub mod read {
-	use crate::font::{self, Font, ToTriangles};
-	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};
-	use crate::ttf_parser_old::{Direction, GlyphDataIntermediate, GlyphIntermediate};
+	use crate::font::{self, Bounds, Font, Glyph, ToTriangles};
+	use crate::ttf_parser::intermediate_to_final::ToGlyph;
+use crate::ttf_parser::raw_to_intermediate::{GlyphDataIntermediate, GlyphIntermediate};
+use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};
+	use crate::ttf_parser;
 	use std::{fs::File, path::Path};
 
-	pub fn read_one_glyph(filename: &Path, glyph_index: usize) {
+	pub fn read_one_glyph(filename: &Path, glyph_index: usize) -> Glyph {
 		let file = File::open(filename).unwrap();
 		let mut ttf_reader = ttf_reader::TrueTypeFontReader::new(file);
 		let sfnt_version: u32 = ttf_reader.read_bytes().unwrap();
@@ -72,18 +74,14 @@ pub mod read {
 			None => panic!("Font should have a cmap table."),
 		};
 
-		let glyph = match glyphs.remove(glyph_index).glyph_data {
-			GlyphDataIntermediate::CompositeGlyph(_) => todo!(),
-			GlyphDataIntermediate::None => todo!(),
-			GlyphDataIntermediate::SimpleGlyph(simple_glyph) => {
-				simple_glyph.to_triangles(true)
-			},
-		};
+		let glyph: Glyph = glyphs.remove(glyph_index).into();
 
-		match glyph {
+		/*match glyph.data {
 			Ok(_) => println!("Success"),
 			Err(_) => println!("Error"),
-		}
+		}*/
+
+		glyph
 	}
 
 	impl Font {
@@ -197,7 +195,7 @@ pub mod read {
 	}
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
 	use std::fs::File;
 
@@ -271,4 +269,4 @@ mod tests {
 		println!("{:?}", contour.get_direction(&vertices));
 		panic!();
 	}
-}
+}*/

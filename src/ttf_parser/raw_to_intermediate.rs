@@ -1,6 +1,6 @@
 use mircalla_types::vectors::Position;
 
-use crate::{font::Bounds, linked_list::LinkedList, ttf_parser::{Contour, Direction, GetDirection, Point}, ttf_reader::{ComponentGlyphRaw, GlyphDataRaw}};
+use crate::{font::Bounds, linked_list::LinkedList, ttf_parser::{Contour, Direction, GetDirection, Point}, ttf_reader::{ComponentGlyphRaw, GlyphDataRaw, GlyphRaw}};
 
 
 pub struct GlyphIntermediate {
@@ -13,6 +13,30 @@ pub enum GlyphDataIntermediate {
 	CompositeGlyph{ children: Vec<GlyphComponentIntermediate> },
 	SimpleGlyph{ contours: Vec<Contour>, points: Vec<Point> },
 	None,
+}
+
+impl From<GlyphRaw> for GlyphIntermediate {
+	fn from(value: GlyphRaw) -> Self {
+		let number_of_contours = if value.number_of_contours > 0 {
+			Some(value.number_of_contours as u16)
+		} else {
+			None
+		};
+		let bounds = [value.x_min, value.x_max, value.y_min, value.y_max].into();
+		let glyph_data = value.glyph_data.into();
+		GlyphIntermediate { number_of_contours, bounds, glyph_data }
+	}
+}
+
+impl From<[i16; 4]> for Bounds {
+	fn from(value: [i16; 4]) -> Self {
+		Bounds {
+			x_min: value[0],
+			x_max: value[1],
+			y_min: value[2],
+			y_max: value[3],
+		}
+	}
 }
 
 impl From<GlyphDataRaw> for GlyphDataIntermediate {
@@ -44,6 +68,7 @@ impl From<GlyphDataRaw> for GlyphDataIntermediate {
 					contours.push(Contour {
 						indices,
 						direction,
+						empty: false,
 					});
 
 					start = end_point + 1;
@@ -59,10 +84,10 @@ impl From<GlyphDataRaw> for GlyphDataIntermediate {
 }
 
 pub struct GlyphComponentIntermediate {
-	flag: u16,
-	glyph_index: u16,
-	offset: Position<i32>,
-	transformation_matrix: TransformationMatrix,
+	pub flag: u16,
+	pub glyph_index: u16,
+	pub offset: Position<i32>,
+	pub transformation_matrix: TransformationMatrix,
 }
 
 impl From<ComponentGlyphRaw> for GlyphComponentIntermediate {

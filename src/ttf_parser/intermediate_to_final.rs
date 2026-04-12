@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use mircalla_types::vectors::Position;
 
-use crate::{font::{Bounds, ComponentGlyph, Glyph, GlyphParseError, Vertex}, linked_list::LinkedListItem, ttf_parser::{Contour, Direction, Point, raw_to_intermediate::{GlyphDataIntermediate, GlyphIntermediate}}, ttf_parser_old::Intersects};
+use crate::{font::{self, Bounds, ComponentGlyph, Glyph, GlyphParseError, Vertex}, linked_list::{LinkedListItem, LinkedListItemFunctions}, ttf_parser::{Contour, Direction, Intersects, Point, raw_to_intermediate::{GlyphComponentIntermediate, GlyphDataIntermediate, GlyphIntermediate}}};
 
 static DEBUG: bool = true;
 
@@ -29,22 +29,49 @@ impl From<GlyphIntermediate> for Glyph {
 	}
 }
 
-trait ToGlyph {
+impl From<GlyphComponentIntermediate> for font::ComponentGlyph {
+	fn from(value: GlyphComponentIntermediate) -> Self {
+		assert!(value.transformation_matrix.is_identity());
+		font::ComponentGlyph {
+			child_index: value.glyph_index as usize,
+			offset: value.offset.map(|offset| offset.into()),
+		}
+	}
+}
+
+pub trait ToGlyph {
 	fn to_glyph(self) -> Result<Glyph, GlyphParseError>;
 }
 
 impl ToGlyph for (Vec<Contour>, Vec<Point>, Bounds) {
 	fn to_glyph(self) -> Result<Glyph, GlyphParseError> {
-		let (contours, points, bounds) = self;
+		let (mut contours, points, bounds) = self;
 		let mut vertices: Vec<Vertex> = points.into_iter().map(|v| v.into()).collect();
 
 		if DEBUG {
 			println!("\n\nInitial Vertices");
 			for vertex in vertices.iter() {
+				println!("	{vertex:?}");
+			}
 
+			println!("\nInitial Contours");
+			for contour in contours.iter() {
+				println!("	Direction: {:?}", contour.direction);
+				println!("	Empty: {:?}", contour.empty);
+				println!("	Start: {:?}", contour.indices.start);
+				println!("	End: {:?}\n", contour.indices.end);
 			}
 		}
 
+
+
+		// --- Remove Off Curve Convex Points and Add Bezier Triangles
+		let mut convex_bezier_indices: Vec<u32> = Vec::new();
+		let mut concave_bezier_indices: Vec<u32> = Vec::new();
+
+
+
+		// --- Move Hole Indices to Parent ---
 		let hole_parents = get_hole_contour_parents(&contours, &vertices);
 
 		let mut channeled: Vec<bool> = vec![false; vertices.len()];
@@ -54,12 +81,104 @@ impl ToGlyph for (Vec<Contour>, Vec<Point>, Bounds) {
 				continue;
 			}
 
-			let (hole_index, parent_index) = get_closest_vertices(hole_contour_index, hole_parents[hole_contour_index].unwrap(), hole_parents, &contours, &vertices, &mut channeled);
+			let (hole_index, parent_index) = get_closest_vertices(hole_contour_index, hole_parents[hole_contour_index].unwrap(), &hole_parents, &contours, &vertices, &mut channeled);
 			
+			if DEBUG {
+				println!("Closest Vertices are {}, {}", hole_index.borrow_mut().get_item(), parent_index.borrow_mut().get_item());
+			}
 
+			let hole_index_value = hole_index.borrow().get_item().clone();
+			let parent_index_value = parent_index.borrow().get_item().clone();
+
+			LinkedListItemFunctions::insert_after(&hole_index, hole_index_value);
+			LinkedListItemFunctions::insert_after(&parent_index, parent_index_value);
+
+			let hole_next = hole_index.borrow().next_item.as_ref().unwrap().clone();
+
+			LinkedListItemFunctions::splice_together(&parent_index, &hole_next);
+
+			contours[hole_contour_index].indices.loose_items_reference();
+			contours[hole_contour_index].empty = true;
 		}
 
-		// --- Move Hole Indices to Parent ---
+
+
+		// --- Calculate Triangles ---
+		let mut indices: Vec<u32> = Vec::new();
+		for contour in contours.iter_mut() {
+			if contour.empty {
+				continue;
+			}
+
+			let length = contour.indices.iter().count();
+			let mut current_index = contour.indices.start.clone().unwrap();
+			let mut indices_removed = 0;
+			let mut indices_passed = 0;
+			while indices_removed < (length - 2) {
+				if indices_passed == length - indices_removed {
+					println!("Stuck in Triangulisation");
+					return Err(GlyphParseError::StuckInTriangulisationLoop);
+				}
+
+				let previous_index = current_index.borrow().previous_item.clone().unwrap();
+				let next_index = current_index.borrow().next_item.clone().unwrap();
+
+				let centre_vertex = &vertices[current_index.borrow().get_item().clone()];
+				let previous_vertex = &vertices[previous_index.borrow().get_item().clone()];
+				let next_vertex = &vertices[next_index.borrow().get_item().clone()];
+
+				let x_1 = (previous_vertex.position.x - centre_vertex.position.x).value as i64; // So that multiplication doesn't overflow
+				let y_1 = (previous_vertex.position.y - centre_vertex.position.y).value as i64;
+
+				let x_2 = (next_vertex.position.x - centre_vertex.position.x).value as i64;
+				let y_2 = (next_vertex.position.y - centre_vertex.position.y).value as i64;
+
+				let direction: Direction = ( (x_1 * y_2 ) >= (y_1 * x_2) ).into();
+
+				let mut ear = false;
+
+				if direction == Direction::Clockwise {
+					let all_outside = contour.indices.iter().map(|index| {
+						let other_vertex = &vertices[*index.borrow().get_item()];
+						if (other_vertex.position == previous_vertex.position) || (other_vertex.position == centre_vertex.position) || (other_vertex.position == next_vertex.position) {
+							true
+						} else {
+							!other_vertex.is_inside_triangle(previous_vertex, centre_vertex, next_vertex)
+						}
+					}).fold(true, |acc, v| acc && v);
+
+					if all_outside {
+						indices.push(next_index.borrow().get_item().clone() as u32);
+						indices.push(current_index.borrow().get_item().clone() as u32);
+						indices.push(previous_index.borrow().get_item().clone() as u32);
+						indices_removed += 1;
+						indices_passed = 0;
+						ear = true;
+						let old_current = current_index;
+						current_index = old_current.borrow().next_item.clone().unwrap();
+
+						let _ = LinkedListItemFunctions::remove(old_current, &mut contour.indices);
+					}
+				}
+
+				if !ear {
+					indices_passed += 1;
+					let old_current = current_index;
+					current_index = old_current.borrow().next_item.clone().unwrap();
+				}
+
+
+
+				
+			}
+		}
+
+		if DEBUG {
+			for contour in contours.into_iter() {
+				println!("Dropping Contour");
+				drop(contour)
+			}
+		}
 
 		Ok(Glyph::new_simple(
 			vertices,
@@ -156,7 +275,7 @@ fn get_hole_contour_parents(contours: &Vec<Contour>, vertices: &Vec<Vertex>) -> 
 	parents
 }
 
-fn get_closest_vertices(hole_contour_index: usize, parent_contour_index: usize, parents: Vec<Option<usize>>, contours: &Vec<Contour>, vertices: &Vec<Vertex>, channeled: &mut Vec<bool>) -> (Rc<RefCell<LinkedListItem<usize>>>, Rc<RefCell<LinkedListItem<usize>>>) {
+fn get_closest_vertices(hole_contour_index: usize, parent_contour_index: usize, parents: &Vec<Option<usize>>, contours: &Vec<Contour>, vertices: &Vec<Vertex>, channeled: &mut Vec<bool>) -> (Rc<RefCell<LinkedListItem<usize>>>, Rc<RefCell<LinkedListItem<usize>>>) {
 	let hole = &contours[hole_contour_index];
 	let parent = &contours[parent_contour_index];
 	
@@ -181,6 +300,10 @@ fn get_closest_vertices(hole_contour_index: usize, parent_contour_index: usize, 
 				let mut intersects_other_children = false;
 				
 				for other_hole_contour_index in 0..contours.len() {
+					if contours[other_hole_contour_index].empty {
+						continue;
+					}
+
 					if other_hole_contour_index == hole_contour_index {
 						continue;
 					}
@@ -199,7 +322,7 @@ fn get_closest_vertices(hole_contour_index: usize, parent_contour_index: usize, 
 
 				if !intersects && !intersects_other_children {
 					smallest_distance_squared = distance_squared;
-					closest_hole_index = Some(hole_index);
+					closest_hole_index = Some(hole_index.clone());
 					closest_parent_index = Some(parent_index);
 				}
 			}
