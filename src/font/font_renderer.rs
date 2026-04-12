@@ -622,7 +622,7 @@ impl TextBox {
 			let mut line_width: FontUnits<u32> = 0.into();
 			for character in line.chars() {
 				let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-				let glyph = &self.font.glyphs[character_glyph_id as usize];
+				let glyph = &self.font.get_glyph(character_glyph_id as usize);
 				line_width += glyph.advance_width;
 			}
 			if line_width > width {
@@ -658,7 +658,7 @@ impl TextBox {
 				WrapOn::Character => {
 					for character in line.chars() {
 						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-						let glyph = &self.font.glyphs[character_glyph_id as usize];
+						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
 						if future_advance_offset > width.into() {
@@ -672,14 +672,14 @@ impl TextBox {
 				},
 				WrapOn::Whitespace => {
 					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let space_advance_width =  self.font.get_glyph(space_glyph_id as usize).advance_width;
 					let mut add_space = false;
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
 						}
@@ -695,14 +695,14 @@ impl TextBox {
 
 						if add_space {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
 						}
 
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
 						}
@@ -737,7 +737,7 @@ impl TextBox {
 				WrapOn::Character => {
 					for character in line.chars() {
 						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-						let glyph = &self.font.glyphs[character_glyph_id as usize];
+						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
 						if future_advance_offset > width.into() {
@@ -754,14 +754,14 @@ impl TextBox {
 				},
 				WrapOn::Whitespace => {
 					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let space_advance_width =  self.font.get_glyph(space_glyph_id as usize).advance_width;
 					let mut add_space = false;
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
 						}
@@ -777,14 +777,14 @@ impl TextBox {
 
 						if add_space {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
 						}
 
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
 							if advance_offset > max_advance_offset {
@@ -852,7 +852,7 @@ impl TextBox {
 				WrapOn::Character => {
 					for character in line.chars() {
 						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-						let glyph = &self.font.glyphs[character_glyph_id as usize];
+						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
 						if future_advance_offset > self.text_box_size.width.into() {
@@ -870,14 +870,14 @@ impl TextBox {
 				},
 				WrapOn::Whitespace => {
 					let space_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-					let space_advance_width =  self.font.glyphs[space_glyph_id as usize].advance_width;
+					let space_advance_width =  self.font.get_glyph(space_glyph_id as usize).advance_width;
 					let mut add_space = false;
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
 						}
@@ -893,7 +893,7 @@ impl TextBox {
 
 						if add_space {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
 							advance_offset += glyph.advance_width;
@@ -905,7 +905,7 @@ impl TextBox {
 
 						for character in word.chars() {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
-							let glyph = &self.font.glyphs[character_glyph_id as usize];
+							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
 							advance_offset += glyph.advance_width;

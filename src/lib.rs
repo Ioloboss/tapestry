@@ -3,10 +3,11 @@ pub mod ttf_parser;
 pub mod font;
 
 pub mod read {
-	use crate::font::{self, Font, ToTriangles};
+	use crate::font::{self, Font, LazyGlyph, ToTriangles};
 	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};
 	use crate::ttf_parser::{Direction, GlyphDataIntermediate, GlyphIntermediate};
-	use std::{fs::File, path::Path};
+	use std::sync::{Arc, Mutex};
+use std::{fs::File, path::Path};
 
 	pub fn read_one_glyph(filename: &Path, glyph_index: usize) {
 		let file = File::open(filename).unwrap();
@@ -162,11 +163,13 @@ pub mod read {
 			};
 
 			let mappings: Vec<font::Mapping> = character_to_glyph_index_table.subtables.into_iter().map(|v| v.into()).collect();
-			let mut glyphs: Vec<font::Glyph> = glyphs.into_iter().map(|v| v.into()).collect();
+			let glyphs: Vec<LazyGlyph> = glyphs.into_iter().zip(horizontal_metrics_table.horizontal_metrics).map(|(intermediate, horizontal_metric)| LazyGlyph::GlyphIncomplete(Arc::new(intermediate), Arc::new(horizontal_metric))).collect();
+			let number_of_glyphs = glyphs.len();
+			let glyphs = Mutex::new(glyphs);
 
-			for (glyph, horizontal_metric) in glyphs.iter_mut().zip(horizontal_metrics_table.horizontal_metrics) {
+			/*for (glyph, horizontal_metric) in glyphs.iter_mut().zip(horizontal_metrics_table.horizontal_metrics) {
 				glyph.set_horizontal_metrics(horizontal_metric);
-			}
+			}*/
 
 			/* println!("os/2 Descender: {:?}", os2_and_windows_metrics_table.s_typographic_descender);
 			println!("hhea descender: {:?}", horizontal_header_table.descender);
@@ -187,7 +190,8 @@ pub mod read {
 				typographic_ascender: (os2_and_windows_metrics_table.us_windows_ascent as i16).into(),
 				//typographic_descender: (-os2_and_windows_metrics_table.s_typographic_descender).into(),
 				//typographic_ascender: (os2_and_windows_metrics_table.s_typographic_ascender).into(),
-				line_spacing: (os2_and_windows_metrics_table.s_typographic_ascender - os2_and_windows_metrics_table.s_typographic_descender + os2_and_windows_metrics_table.s_typographic_line_gap).into()
+				line_spacing: (os2_and_windows_metrics_table.s_typographic_ascender - os2_and_windows_metrics_table.s_typographic_descender + os2_and_windows_metrics_table.s_typographic_line_gap).into(),
+				number_of_glyphs,
 			}
 
 		}
