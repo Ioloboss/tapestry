@@ -355,6 +355,7 @@ pub trait ToTriangles {
 pub enum Mapping {
 	TrueTypeFormat4(MappingTrueTypeFormat4),
 	TrueTypeFormat12(MappingTrueTypeFormat12),
+	InvalidFormat(usize),
 }
 
 impl Mapping {
@@ -362,6 +363,10 @@ impl Mapping {
 		match self {
 			Mapping::TrueTypeFormat4(mapping) => mapping.get_glyph_id(character_code),
 			Mapping::TrueTypeFormat12(mapping) => mapping.get_glyph_id(character_code),
+			Mapping::InvalidFormat(format) => {
+				println!("Error Attempting To index with invalid cmap subtable format: {format}");
+				None
+			}
 		}
 	}
 
@@ -369,6 +374,10 @@ impl Mapping {
 		match self {
 			Mapping::TrueTypeFormat4(mapping) => mapping.get_character_codes(glyph_index),
 			Mapping::TrueTypeFormat12(mapping) => mapping.get_character_codes(glyph_index),
+			Mapping::InvalidFormat(format) => {
+				println!("Error Attempting To get character codes with invalid cmap subtable format: {format}");
+				Vec::new()
+			}
 		}
 	}
 }
@@ -378,6 +387,7 @@ impl From<ttf_reader::CharacterToGlyphIndexSubtable> for Mapping {
 		match value {
 			ttf_reader::CharacterToGlyphIndexSubtable::Format4(subtable) => Mapping::TrueTypeFormat4(subtable.into()),
 			ttf_reader::CharacterToGlyphIndexSubtable::Format12(subtable) => Mapping::TrueTypeFormat12(subtable.into()),
+			ttf_reader::CharacterToGlyphIndexSubtable::InvalidFormat(format) => Mapping::InvalidFormat(format),
 		}
 	}
 }

@@ -2,8 +2,6 @@ pub mod ttf_reader;
 pub mod ttf_parser;
 pub mod font;
 
-pub mod linked_list;
-
 pub mod read {
 	use crate::font::{self, Font, ToTriangles};
 	use crate::ttf_reader::{self, CharacterToGlyphIndexTable, FontHeaderTable, GlyphTable, HorizontalHeaderTable, HorizontalMetricsTable, IndexToLocationTable, MaximumProfileTable, OS2AndWindowsMetricsTable, TableRecord, TableTag};

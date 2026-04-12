@@ -189,6 +189,7 @@ pub struct EncodingRecord {
 pub enum CharacterToGlyphIndexSubtable {
 	Format4(CharacterToGlyphIndexSubtableFormat4),
 	Format12(CharacterToGlyphIndexSubtableFormat12),
+	InvalidFormat(usize),
 }
 
 impl CharacterToGlyphIndexSubtable {
@@ -196,6 +197,10 @@ impl CharacterToGlyphIndexSubtable {
 		match self {
 			CharacterToGlyphIndexSubtable::Format4(subtable) => {subtable.get_glyph_id(character_code)},
 			CharacterToGlyphIndexSubtable::Format12(subtable) => {subtable.get_glyph_id(character_code)},
+			CharacterToGlyphIndexSubtable::InvalidFormat(format) => {
+				println!("Error Attempting To index with invalid cmap subtable format: {format}");
+				None
+			}
 		}
 	}
 }
@@ -986,7 +991,7 @@ impl FromTTFReader for CharacterToGlyphIndexSubtable {
 				Ok(CharacterToGlyphIndexSubtable::Format12(subtable))
 			},
 			_ => {
-				todo!("Format {format} cmap subtables not supported")
+				Ok(CharacterToGlyphIndexSubtable::InvalidFormat(format as usize))
 			}
 		}
 	}
