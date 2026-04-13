@@ -9,8 +9,8 @@ fn main() {
 	let font = Font::new(filename);
 	let elapsed_time = before.elapsed();
 	println!("Loading Font took {} milliseconds", elapsed_time.as_millis());
-	println!("Font has {} glyphs", font.glyphs.len());
-	println!("So font takes {} milliseconds per glyph and does {} glyphs per second", elapsed_time.as_millis() as f64 / font.glyphs.len() as f64, font.glyphs.len() as f64 / elapsed_time.as_secs() as f64 );
+	println!("Font has {} glyphs", font.number_of_glyphs);
+	println!("So font takes {} milliseconds per glyph and does {} glyphs per second", elapsed_time.as_millis() as f64 / font.number_of_glyphs as f64, font.number_of_glyphs as f64 / elapsed_time.as_secs() as f64 );
 	println!("Has Mappings:");
 	for mapping in font.mappings.iter() {
 		println!("	Mapping Format: {}",

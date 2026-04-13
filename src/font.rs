@@ -1,19 +1,20 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::{Arc, Mutex}};
 
 use mircalla_types::{units::Pixels, vectors::{Colour, Position, Size}};
 use winit::dpi::PhysicalSize;
 
-use crate::ttf_reader::{self, HorizontalMetric};
+use crate::{ttf_parser::GlyphIntermediate, ttf_reader::{self, HorizontalMetric}};
 
 pub mod font_renderer;
 
 pub struct Font {
-	pub glyphs: Vec<Glyph>,
+	pub glyphs: Mutex<Vec<LazyGlyph>>,
 	pub mappings: Vec<Mapping>,
 	pub units_per_em: FontUnits<u16>,
 	pub typographic_descender: FontUnits<i16>,
 	pub typographic_ascender: FontUnits<i16>,
 	pub line_spacing: FontUnits<i16>,
+	pub number_of_glyphs: usize,
 }
 
 impl Font {
@@ -28,7 +29,25 @@ impl Font {
 		self.mappings[0].get_character_codes(glyph_index)
 	}
 
-	pub fn number_of_failed_parse_of_type(&self, type_of_parse_error: GlyphParseError) -> usize {
+	pub fn get_glyph(&self, index: usize) -> Arc<Glyph> {
+		let mut glyphs = self.glyphs.lock().unwrap();
+		match &(*glyphs)[index] {
+			LazyGlyph::GlyphComplete(glyph) => glyph.clone(),
+			LazyGlyph::GlyphIncomplete(glyph_intermediate, horizontal_metric) => {
+				let glyph_intermediate = glyph_intermediate.clone();
+				let horizontal_metric = horizontal_metric.clone();
+				(*glyphs)[index] = LazyGlyph::Processing;
+				let mut glyph: Glyph = Arc::into_inner(glyph_intermediate).expect("this should only have one reference").into();
+				glyph.set_horizontal_metrics(Arc::into_inner(horizontal_metric).expect("this should only have one reference"));
+				let glyph = Arc::new(glyph);
+				(*glyphs)[index] = LazyGlyph::GlyphComplete(glyph.clone());
+				glyph
+			}
+			LazyGlyph::Processing => todo!("Should do some sort of lock or something")
+		}
+	}
+
+	/*pub fn number_of_failed_parse_of_type(&self, type_of_parse_error: GlyphParseError) -> usize {
 		let mut count = 0;
 		for glyph in &self.glyphs {
 			if let GlyphData::FailedParse(error) = &glyph.data {
@@ -48,7 +67,13 @@ impl Font {
 			}
 		}
 		count
-	}
+	}*/
+}
+
+pub enum LazyGlyph {
+	GlyphComplete(Arc<Glyph>),
+	GlyphIncomplete(Arc<GlyphIntermediate>, Arc<HorizontalMetric>),
+	Processing,
 }
 
 pub struct GlyphIndex(pub u16);
@@ -138,7 +163,7 @@ impl Glyph {
 				for child in data.children.iter() {
 					let updated_vertices_start = vertices_raw.len() + vertices_start;
 					let offset = offset + child.offset;
-					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.glyphs[child.child_index].to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start, colour, bounds);
+					let (extra_vertices_raw, extra_indices, extra_convex_bezier_indices, extra_concave_bezier_indices) = font.get_glyph(child.child_index).to_raw(font, pixels_per_font_unit, offset, screen_size, position, updated_vertices_start, colour, bounds);
 					vertices_raw.extend(extra_vertices_raw);
 					indices.extend(extra_indices);
 					convex_bezier_indices.extend(extra_convex_bezier_indices);
