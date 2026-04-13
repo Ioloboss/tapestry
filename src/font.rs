@@ -8,7 +8,7 @@ use crate::{ttf_parser::GlyphIntermediate, ttf_reader::{self, HorizontalMetric}}
 pub mod font_renderer;
 
 pub struct Font {
-	pub glyphs: Mutex<Vec<LazyGlyph>>,
+	pub glyphs: Vec<Mutex<LazyGlyph>>,
 	pub mappings: Vec<Mapping>,
 	pub units_per_em: FontUnits<u16>,
 	pub typographic_descender: FontUnits<i16>,
@@ -29,22 +29,21 @@ impl Font {
 		self.mappings[0].get_character_codes(glyph_index)
 	}
 
-	pub fn get_glyph(&self, index: usize) -> Arc<Glyph> {
-		let mut glyphs = self.glyphs.lock().unwrap();
-		match &(*glyphs)[index] {
-			LazyGlyph::GlyphComplete(glyph) => glyph.clone(),
-			LazyGlyph::GlyphIncomplete(glyph_intermediate, horizontal_metric) => {
-				let glyph_intermediate = glyph_intermediate.clone();
-				let horizontal_metric = horizontal_metric.clone();
-				(*glyphs)[index] = LazyGlyph::Processing;
-				let mut glyph: Glyph = Arc::into_inner(glyph_intermediate).expect("this should only have one reference").into();
-				glyph.set_horizontal_metrics(Arc::into_inner(horizontal_metric).expect("this should only have one reference"));
-				let glyph = Arc::new(glyph);
-				(*glyphs)[index] = LazyGlyph::GlyphComplete(glyph.clone());
-				glyph
-			}
-			LazyGlyph::Processing => todo!("Should do some sort of lock or something")
+	pub fn get_glyph(&self, index: usize) -> &Glyph {
+		{
+			let current_lazy_glyph: &mut LazyGlyph = &mut self.glyphs[index].lock().unwrap();
+			let (glyph_intermediate, horizontal_metric) = match current_lazy_glyph {
+				LazyGlyph::GlyphComplete(glyph) => {
+					let glyph: *const Glyph = glyph;
+					unsafe { return &*glyph }
+				},
+				LazyGlyph::GlyphIncomplete(input) => input.take().unwrap(),
+			};
+			let mut glyph: Glyph = glyph_intermediate.into();
+			glyph.set_horizontal_metrics(horizontal_metric);
+			*current_lazy_glyph = LazyGlyph::GlyphComplete(glyph);
 		}
+		self.get_glyph(index)
 	}
 
 	/*pub fn number_of_failed_parse_of_type(&self, type_of_parse_error: GlyphParseError) -> usize {
@@ -71,9 +70,8 @@ impl Font {
 }
 
 pub enum LazyGlyph {
-	GlyphComplete(Arc<Glyph>),
-	GlyphIncomplete(Arc<GlyphIntermediate>, Arc<HorizontalMetric>),
-	Processing,
+	GlyphComplete(Glyph),
+	GlyphIncomplete(Option<(GlyphIntermediate, HorizontalMetric)>),
 }
 
 pub struct GlyphIndex(pub u16);

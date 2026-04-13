@@ -163,9 +163,8 @@ use std::{fs::File, path::Path};
 			};
 
 			let mappings: Vec<font::Mapping> = character_to_glyph_index_table.subtables.into_iter().map(|v| v.into()).collect();
-			let glyphs: Vec<LazyGlyph> = glyphs.into_iter().zip(horizontal_metrics_table.horizontal_metrics).map(|(intermediate, horizontal_metric)| LazyGlyph::GlyphIncomplete(Arc::new(intermediate), Arc::new(horizontal_metric))).collect();
+			let glyphs: Vec<Mutex<LazyGlyph>> = glyphs.into_iter().zip(horizontal_metrics_table.horizontal_metrics).map(|(intermediate, horizontal_metric)| Mutex::new(LazyGlyph::GlyphIncomplete(Some((intermediate, horizontal_metric))))).collect();
 			let number_of_glyphs = glyphs.len();
-			let glyphs = Mutex::new(glyphs);
 
 			/*for (glyph, horizontal_metric) in glyphs.iter_mut().zip(horizontal_metrics_table.horizontal_metrics) {
 				glyph.set_horizontal_metrics(horizontal_metric);
