@@ -76,6 +76,7 @@ pub enum LazyGlyph {
 
 pub struct GlyphIndex(pub u16);
 
+#[derive(Debug)]
 pub struct Glyph {
 	bounds: Bounds,
 	pub data: GlyphData,
@@ -90,6 +91,7 @@ pub enum GlyphParseError {
 	NoValidChannel,
 }
 
+#[derive(Debug)]
 pub enum GlyphData {
 	SimpleGlyph(SimpleGlyph),
 	CompositeGlyph(CompositeGlyph),
@@ -97,6 +99,7 @@ pub enum GlyphData {
 	None,
 }
 
+#[derive(Debug)]
 pub struct SimpleGlyph {
 	vertices: Vec<Vertex>,
 	indices: Vec<u32>,
@@ -104,10 +107,12 @@ pub struct SimpleGlyph {
 	concave_bezier_indices: Vec<u32>,
 }
 
+#[derive(Debug)]
 pub struct CompositeGlyph {
 	children: Vec<ComponentGlyph>,
 }
 
+#[derive(Debug)]
 pub struct ComponentGlyph {
 	pub child_index: usize,
 	pub offset: Position<FontUnits<i32>>,
@@ -178,7 +183,7 @@ impl Glyph {
 					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour: colour.into()},
 					font_renderer::VertexRaw {position: [0.0, 0.0], uv_coords: [0.0, 0.0], colour: colour.into()}
 				];
-				let indices = vec![0, 1, 2];
+				let indices = vec![0 + vertices_start as u32, 1 + vertices_start as u32, 2 + vertices_start as u32];
 				(vertices, indices, Vec::new(), Vec::new())
 			},
 		}
@@ -382,7 +387,7 @@ pub enum Mapping {
 }
 
 impl Mapping {
-	fn get_glyph_id(&self, character_code: u64) -> Option<u16> {
+	pub fn get_glyph_id(&self, character_code: u64) -> Option<u16> {
 		match self {
 			Mapping::TrueTypeFormat4(mapping) => mapping.get_glyph_id(character_code),
 			Mapping::TrueTypeFormat12(mapping) => mapping.get_glyph_id(character_code),

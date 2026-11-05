@@ -1,9 +1,9 @@
 use mircalla_types::{units::{Pixels}, vectors::{Alignment, Alignments, Colour, Position, Size}};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
-use std::{sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 
-use crate::font::{ToPixelsSize};
+use crate::font::{ToPixelsSize, Vertex};
 
 use super::{Font, FontUnits};
 
@@ -224,7 +224,7 @@ impl FontRenderer {
 			},
 			depth_stencil: None,
 			multisample: wgpu::MultisampleState {
-				count: 1, // SET TO 4 FOR MSAA
+				count: 4, // SET TO 4 FOR MSAA
 				mask: !0,
 				alpha_to_coverage_enabled: false,
 			},
@@ -450,7 +450,7 @@ impl FontRenderer {
 		self.text_boxes.push(text_box);
 	}
 
-	pub fn draw_text(&self, queue: &wgpu::Queue, view: &wgpu::TextureView) {
+	pub fn draw_text(&self, queue: &wgpu::Queue, view: &wgpu::TextureView, multisample_view: &wgpu::TextureView) {
 
 		/* let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
 			label: Some("Tapestry TextureView"),
@@ -461,7 +461,7 @@ impl FontRenderer {
 			return
 		}
 
-		let size = self.window.inner_size();
+		/*let size = self.window.inner_size();
 
 		let multisample_texture = self.device.create_texture(&wgpu::TextureDescriptor{
 			label: Some("Multisample texture"),
@@ -474,7 +474,7 @@ impl FontRenderer {
 			view_formats: &[],
 		});
 
-		let multisample_view = multisample_texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let multisample_view = multisample_texture.create_view(&wgpu::TextureViewDescriptor::default());*/
 
 		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("Render Encoder"),
@@ -485,8 +485,8 @@ impl FontRenderer {
 				label: Some("Render Pass"),
 				color_attachments: &[
 					Some(wgpu::RenderPassColorAttachment {
-						view: &view, // SET TO &multisample_view FOR MSAA
-						resolve_target: None, // SET TO Some(&view) FOR MSAA
+						view: &multisample_view, // SET TO &multisample_view FOR MSAA
+						resolve_target: Some(&view), // SET TO Some(&view) FOR MSAA
 						ops: wgpu::Operations {
 							// load: wgpu::LoadOp::Clear(
 							// 	wgpu::Color {
@@ -601,17 +601,73 @@ pub enum WrapOn {
 	Whitespace,
 }
 
+pub struct RichText {
+	pub characters: Vec<RichCharacter>,
+}
+
+impl RichText {
+	pub fn lines(&self) -> impl Iterator<Item = &[RichCharacter]> {
+		self.characters.split(|rich_character| rich_character.char == '\n')
+	}
+
+	pub fn from_string(string: String, colour: Colour) -> Self {
+		let mut characters = Vec::new();
+
+		for char in string.chars() {
+			characters.push(RichCharacter {
+				char,
+				colour,
+			});
+		}
+
+		RichText {
+			characters,
+		}
+	}
+
+	pub fn to_string(&self) -> String {
+		let mut string = String::new();
+
+		for char in self.characters.iter() {
+			string.push(char.char);
+		}
+
+		string
+	}
+
+	pub fn new() -> Self {
+		RichText { characters: Vec::new() }
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RichCharacter {
+	pub char: char,
+	pub colour: Colour,
+}
+
+pub trait Text {
+	fn split_whitespace(&self) -> impl Iterator<Item = &[RichCharacter]>;
+}
+
+impl Text for &[RichCharacter] {
+	fn split_whitespace(&self) -> impl Iterator<Item = &[RichCharacter]> {
+		self.split(|rich_character| rich_character.char.is_whitespace())
+	}
+}
+
 #[derive(Clone)]
 pub struct TextBox {
 	pub font: Arc<Font>,
-	pub text: Arc<Mutex<String>>,
+	pub text: Arc<Mutex<RichText>>,
 	pub pixels_per_em: Pixels<f32>,
 	pub position: Position<Pixels<i32>>,
 	pub text_box_size: Size<Pixels<i32>>,
 	pub bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>),
-	pub colour: Colour,
 	pub wrap_options: WrapOptions,
 	pub alignment: Alignment,
+	pub cursor_position: Option<usize>,
+	pub cursor_colour: Colour,
 }
 
 impl TextBox {
@@ -620,8 +676,8 @@ impl TextBox {
 		let text_lock = self.text.lock().unwrap();
 		for line in text_lock.lines() {
 			let mut line_width: FontUnits<u32> = 0.into();
-			for character in line.chars() {
-				let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+			for character in line {
+				let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 				let glyph = &self.font.get_glyph(character_glyph_id as usize);
 				line_width += glyph.advance_width;
 			}
@@ -656,8 +712,8 @@ impl TextBox {
 			}
 			match self.wrap_options.wrap_on {
 				WrapOn::Character => {
-					for character in line.chars() {
-						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+					for character in line {
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
@@ -677,8 +733,8 @@ impl TextBox {
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
@@ -700,8 +756,8 @@ impl TextBox {
 							advance_offset += glyph.advance_width;
 						}
 
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
@@ -735,8 +791,8 @@ impl TextBox {
 			}
 			match self.wrap_options.wrap_on {
 				WrapOn::Character => {
-					for character in line.chars() {
-						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+					for character in line {
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
@@ -759,8 +815,8 @@ impl TextBox {
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
@@ -782,8 +838,8 @@ impl TextBox {
 							advance_offset += glyph.advance_width;
 						}
 
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							advance_offset += glyph.advance_width;
@@ -806,6 +862,51 @@ impl TextBox {
 	}
 }
 
+fn draw_cursor(font: &Font, pixels_per_font_unit: f32, offset: Position<FontUnits<i32>>, screen_size: Size<Pixels<i32>>, position: Position<Pixels<f32>>, vertices_start: usize, colour: Colour, bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>)) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
+	let units_per_em = font.units_per_em.value as f32;
+	let cursor_vertices = [
+		Vertex {
+			x: ((units_per_em * -0.05) as i16).into(),
+			y: ((units_per_em * -0.1) as i16).into(),
+			on_curve: true,
+			uv_coords: [0.0, 0.0],
+		},
+		Vertex {
+			x: ((units_per_em * -0.05) as i16).into(),
+			y: ((units_per_em * 0.9) as i16).into(),
+			on_curve: true,
+			uv_coords: [0.0, 0.0],
+		},
+		Vertex {
+			x: ((units_per_em * 0.05) as i16).into(),
+			y: ((units_per_em * 0.9) as i16).into(),
+			on_curve: true,
+			uv_coords: [0.0, 0.0],
+		},
+		Vertex {
+			x: ((units_per_em * 0.05) as i16).into(),
+			y: ((units_per_em * -0.1) as i16).into(),
+			on_curve: true,
+			uv_coords: [0.0, 0.0],
+		},
+	];
+
+	let vertices_raw = cursor_vertices.iter().map(|v| v.to_raw(pixels_per_font_unit, offset, screen_size, position, colour, bounds)).collect();
+
+	let indices: Vec<u32> = [
+		0 + vertices_start,
+		3 + vertices_start,
+		1 + vertices_start,
+		3 + vertices_start,
+		2 + vertices_start,
+		1 + vertices_start,
+	].into_iter().map(|i| i as u32).collect();
+	let convex_bezier_indices = Vec::new();
+	let concave_bezier_indices = Vec::new();
+
+	(vertices_raw, indices, convex_bezier_indices, concave_bezier_indices)
+}
+
 impl TextBox {
 	fn to_raw(&self, screen_size: Size<Pixels<i32>>, vertices_start: usize) -> (Vec<VertexRaw>, Vec<u32>, Vec<u32>, Vec<u32>) {
 		let mut advance_offset: FontUnits<i32> = 0.into();
@@ -814,6 +915,7 @@ impl TextBox {
 		let mut indices: Vec<u32> = Vec::new();
 		let mut convex_bezier_indices: Vec<u32> = Vec::new();
 		let mut concave_bezier_indices: Vec<u32> = Vec::new();
+		let mut characters_added: usize = 0;
 
 		let text_size = self.get_text_size(self.text_box_size.width);
 
@@ -850,8 +952,18 @@ impl TextBox {
 			}
 			match self.wrap_options.wrap_on {
 				WrapOn::Character => {
-					for character in line.chars() {
-						let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+					for character in line {
+						// Cursor
+						if self.cursor_position == Some(characters_added) {
+							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = draw_cursor(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.cursor_colour, self.bounds);
+							vertices_raw.append(&mut vertices_raw_character);
+							indices.append(&mut indices_character);
+							convex_bezier_indices.append(&mut convex_bezier_indices_character);
+							concave_bezier_indices.append(&mut concave_bezier_indices_character);
+						}
+
+						// Character
+						let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 						let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 						let future_advance_offset = (advance_offset + glyph.advance_width).to_pixels(self.get_pixels_per_font_unit());
@@ -860,12 +972,13 @@ impl TextBox {
 							vertical_offset -= self.font.line_spacing;
 						}
 
-						let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+						let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, character.colour, self.bounds);
 						advance_offset += glyph.advance_width;
 						vertices_raw.append(&mut vertices_raw_character);
 						indices.append(&mut indices_character);
 						convex_bezier_indices.append(&mut convex_bezier_indices_character);
 						concave_bezier_indices.append(&mut concave_bezier_indices_character);
+						characters_added += 1;
 					}
 				},
 				WrapOn::Whitespace => {
@@ -875,8 +988,8 @@ impl TextBox {
 					let mut first_word = true;
 					for word in line.split_whitespace() {
 						let mut word_advance_width: FontUnits<i32> = if add_space {space_advance_width.into()} else {0.into()};
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
 							word_advance_width += glyph.advance_width;
@@ -895,7 +1008,7 @@ impl TextBox {
 							let character_glyph_id = self.font.mappings[0].get_glyph_id(' ' as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
-							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.cursor_colour, self.bounds);
 							advance_offset += glyph.advance_width;
 							vertices_raw.append(&mut vertices_raw_character);
 							indices.append(&mut indices_character);
@@ -903,11 +1016,11 @@ impl TextBox {
 							concave_bezier_indices.append(&mut concave_bezier_indices_character);
 						}
 
-						for character in word.chars() {
-							let character_glyph_id = self.font.mappings[0].get_glyph_id(character as u64).unwrap_or(0);
+						for character in word {
+							let character_glyph_id = self.font.mappings[0].get_glyph_id(character.char as u64).unwrap_or(0);
 							let glyph = &self.font.get_glyph(character_glyph_id as usize);
 
-							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.colour, self.bounds);
+							let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = glyph.to_raw(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, character.colour, self.bounds);
 							advance_offset += glyph.advance_width;
 							vertices_raw.append(&mut vertices_raw_character);
 							indices.append(&mut indices_character);
@@ -922,12 +1035,20 @@ impl TextBox {
 			first_line = false;
 		}
 		drop(string);
+		if self.cursor_position == Some(characters_added) {
+			let (mut vertices_raw_character, mut indices_character, mut convex_bezier_indices_character, mut concave_bezier_indices_character) = draw_cursor(&*self.font, self.get_pixels_per_font_unit(), (advance_offset, vertical_offset).into(), screen_size, position.into(), vertices_raw.len() + vertices_start, self.cursor_colour, self.bounds);
+			vertices_raw.append(&mut vertices_raw_character);
+			indices.append(&mut indices_character);
+			convex_bezier_indices.append(&mut convex_bezier_indices_character);
+			concave_bezier_indices.append(&mut concave_bezier_indices_character);
+		}
 		(vertices_raw, indices, convex_bezier_indices, concave_bezier_indices)
 	}
 }
 
 impl TextBox {
-	pub fn new(font: Arc<Font>, text: Arc<Mutex<String>>, pixels_per_em: Pixels<f32>, colour: Colour, wrap_options: WrapOptions) -> TextBox {
+	pub fn from_string(font: Arc<Font>, string: String, pixels_per_em: Pixels<f32>, colour: Colour, wrap_options: WrapOptions) -> TextBox {
+		let text = Arc::new(Mutex::new(RichText::from_string(string, colour)));
 		TextBox {
 			font,
 			text,
@@ -935,14 +1056,35 @@ impl TextBox {
 			position: (0, 0).into(),
 			text_box_size: (0, 0).into(),
 			bounds: ((0, 0).into(), (i32::MAX, i32::MAX).into()),
-			colour,
 			wrap_options,
-			alignment: Alignment { x: mircalla_types::vectors::Alignments::Start, y: mircalla_types::vectors::Alignments::Start }
+			alignment: Alignment { x: mircalla_types::vectors::Alignments::Start, y: mircalla_types::vectors::Alignments::Start },
+			cursor_position: None,
+			cursor_colour: colour,
+		}
+	}
+
+	pub fn new(font: Arc<Font>, text: Arc<Mutex<RichText>>, pixels_per_em: Pixels<f32>, cursor_colour: Colour, wrap_options: WrapOptions) -> TextBox {
+		TextBox {
+			font,
+			text,
+			pixels_per_em,
+			position: (0, 0).into(),
+			text_box_size: (0, 0).into(),
+			bounds: ((0, 0).into(), (i32::MAX, i32::MAX).into()),
+			wrap_options,
+			alignment: Alignment { x: mircalla_types::vectors::Alignments::Start, y: mircalla_types::vectors::Alignments::Start },
+			cursor_position: None,
+			cursor_colour,
 		}
 	}
 
 	pub fn alignment(mut self, alignment: Alignment) -> TextBox {
 		self.alignment = alignment;
+		self
+	}
+
+	pub fn cursor_position(mut self, cursor_position: Option<usize>) -> TextBox {
+		self.cursor_position = cursor_position;
 		self
 	}
 }
